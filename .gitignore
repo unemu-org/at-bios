@@ -2,3 +2,7 @@ binaries/CMakeCache.txt
 binaries/CMakeFiles
 binaries/cmake_install.cmake
 binaries/Makefile
+
+# unemu fork
+/result
+/result-*
