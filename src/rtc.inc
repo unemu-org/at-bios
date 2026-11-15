@@ -317,10 +317,15 @@ rtc_init:
 
 	mov	al,cmos_control_d
 	call	rtc_read		; read control register D
+%ifdef AT_CMOS_CHECK
+	call	cmos_validate		; CMOS 0Eh: battery and checksum status
+%endif ; AT_CMOS_CHECK
 	test	al,cmos_vrt
 	jnz	.1			; RTC battery is OK
+%ifndef AT_CMOS_CHECK
 	mov	si,msg_rtc_bad
 	call	print
+%endif ; AT_CMOS_CHECK
 ; RTC is bad, set initial time
 	mov	ah,03h			; int 1Ah, function 03h - set RTC time
 	xor	cx,cx
@@ -336,6 +341,7 @@ rtc_init:
 	call	set_system_timer		; set timer variables to RTC time
 
 %ifdef AT_RTC_NVRAM
+%ifndef AT_CMOS_CHECK
 ; compare NVRAM checksum with stored value
 
 	call	nvram_checksum
@@ -380,13 +386,19 @@ rtc_init:
 	inc	al			; AL = cmos_sum_lo
 	mov	ah,bl
 	call	rtc_write
+%endif ; AT_CMOS_CHECK
 
 ; read equipment byte from NVRAM and set it in BIOS data area
 
 .update_equipment:
 	mov	al,cmos_equip
+%ifdef AT_CMOS_CHECK
+	call	cmos_read_config	; the default if the CMOS is not valid
+	and	al,~(equip_video|equip_mouse|equip_fpu) ; autodetected
+%else ; AT_CMOS_CHECK
 	call	rtc_read
 	and	al,~(equip_video|equip_mouse)   ; these are autodetected
+%endif ; AT_CMOS_CHECK
 	and	byte [equipment_list],equip_video|equip_mouse
 	or	byte [equipment_list],al
 
@@ -431,7 +443,11 @@ nvram_checksum:
 	add	bl,al			; BX += AL
 	adc	bh,0
 	inc	ah
+%ifdef AT_CMOS_CHECK
+	cmp	ah,cmos_config_a	; last address is 2Dh, as on the IBM PC/AT
+%else ; AT_CMOS_CHECK
 	cmp	ah,20h			; last address is 20h
+%endif ; AT_CMOS_CHECK
 	jbe	.checksum_loop
 	pop	ax
 	ret
@@ -475,6 +491,9 @@ nvram_save:
 
 .save_equipment:
 	mov	byte [equipment_list],ah
+%ifdef AT_CMOS_CHECK
+	call	cmos_save_config	; 15h-18h, 0Eh, display type in AH
+%endif ; AT_CMOS_CHECK
 	mov	al,cmos_equip
 	call	rtc_write
 
@@ -504,8 +523,12 @@ nvram_save:
 ;-------------------------------------------------------------------------
 get_config_a:
 	mov	al,cmos_config_a	; read BIOS configuration byte A
+%ifdef AT_CMOS_CHECK
+	jmp	cmos_read_config	; the default if the CMOS is not valid
+%else ; AT_CMOS_CHECK
 	call	rtc_read
 	ret
+%endif ; AT_CMOS_CHECK
   
 ;=========================================================================
 ; get_floppy - Return floppy drive type from NVRAM
@@ -516,8 +539,12 @@ get_config_a:
 ;-------------------------------------------------------------------------
 get_floppy:
 	mov     al,cmos_floppy
+%ifdef AT_CMOS_CHECK
+	jmp	cmos_read_config	; the default if the CMOS is not valid
+%else ; AT_CMOS_CHECK
 	call    rtc_read		; read currently configured floppies
 	ret
+%endif ; AT_CMOS_CHECK
 
 %endif ; AT_RTC_NVRAM
 

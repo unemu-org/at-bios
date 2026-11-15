@@ -361,6 +361,10 @@ boot_os:
 	or	byte [post_flags],post_setup
 .no_key:
 
+%ifdef AT_CMOS_CHECK
+	call	cmos_error_wait		; after a CMOS error: F1 or F2 (setup)
+%endif ; AT_CMOS_CHECK
+
 	test	byte [post_flags],post_setup
 	jz	.no_setup
 
@@ -729,6 +733,9 @@ init_v40:
 %ifdef AT_DMA
 %include	"at_dma.inc"		; second DMAC initialization
 %endif ; AT_DMA
+%ifdef AT_CMOS_CHECK
+%include	"at_cmos.inc"		; CMOS configuration checks
+%endif ; AT_CMOS_CHECK
 
 ;=========================================================================
 ; cold_start, warm_start - BIOS POST (Power on Self Test) starts here
@@ -1289,6 +1296,10 @@ low_ram_ok:
 	mov	si,msg_kib
 	call	print
 %endif ; EBDA_SIZE
+
+%ifdef AT_CMOS_CHECK
+	call	cmos_check		; CMOS configuration against the hardware
+%endif ; AT_CMOS_CHECK
 
 	call	detect_rom_ext		; detect and initialize extension ROMs
 

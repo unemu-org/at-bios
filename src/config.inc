@@ -57,7 +57,8 @@
 ; Same as Xi 8088, except: no TURBO_MODE (on the AT, bit 2 of port 61h
 ; disables the RAM parity check, it is not a turbo switch), its own VERSION,
 ; FLOPPY_RESET_ANY_DRIVE, AT_DISPLAY_SWITCH, AT_CPU, AT_SHUTDOWN, AT_DMA,
-; AT_EXT_MEMORY and AT_NMI_POLARITY. See README.unemu.md for all differences
+; AT_EXT_MEMORY, AT_NMI_POLARITY and AT_CMOS_CHECK. See README.unemu.md for
+; all differences
 %ifdef MACHINE_UNEMU_AT
 %define VERSION		'1.0.2-unemu.1'	; unemu AT BIOS version
 %define	START		8000h		; BIOS starts at offset 8000h
@@ -82,6 +83,7 @@
 %define AT_DMA				; Has two DMACs (AT-style)
 %define AT_EXT_MEMORY			; INT 15h AH=87h, AH=88h
 %define AT_NMI_POLARITY			; IBM PC/AT port 70h NMI mask polarity
+%define AT_CMOS_CHECK			; IBM PC/AT CMOS configuration checks
 %endif ; MACHINE_UNEMU_AT
 
 ; Settings for FE2010A
@@ -230,3 +232,22 @@
 ; Requires AT_NMI and the RTC at port 70h (no AT_RTC_PORT)
 ; Note: MACHINE_UNEMU_AT sets it
 ; %define AT_NMI_POLARITY
+
+; Check the CMOS configuration as the IBM PC/AT POST does, and record the
+; result in the CMOS diagnostic status byte (0Eh): RTC battery (register D
+; VRT bit), checksum of 10h-2Dh in 2Eh (high byte) and 2Fh (low byte), the
+; equipment byte (14h: diskettes against 10h, co-processor, display type)
+; against the hardware, the memory sizes (15h-16h against the base memory
+; found, 17h-18h against 30h-31h), and the RTC time and date. Errors are
+; reported as 161-164, then POST shows POST code 28h and waits for F1
+; (continue) or F2 (BIOS setup) before booting. The NVRAM checksum covers
+; 10h-2Dh instead of 10h-20h. On a dead battery or a bad checksum the CMOS
+; is not rewritten: the default floppy, equipment and configuration A
+; values are used. The co-processor bit of the equipment word is taken
+; from the detection only. The base memory size found is kept in
+; 0040:0015h. The BIOS setup also saves the memory sizes, an EGA/VGA
+; display type when a video ROM is present, clears 11h-13h and 19h-2Ch
+; after a dead battery or a bad checksum, and clears 0Eh. Requires
+; AT_RTC_NVRAM and AT_EXT_MEMORY
+; Note: MACHINE_UNEMU_AT sets it
+; %define AT_CMOS_CHECK

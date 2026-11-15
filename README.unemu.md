@@ -40,7 +40,7 @@ depend on the nasm version.
 |---|---|
 | `xi8088` | `1ad458acb1f22dee6b3d9b6bd95e83218a7ddc5389fa2b2c67a4001e689c81a8` |
 | `xi8088-atreset` | `61589573c9809273198b137d9419c87242b0a5f63c2ad834a9565950c3d6becc` |
-| `unemu-at` | `8b4bcfb16f5d04d645f20d3d1d3849141be3765c1898463d70e8b6b0202d7fb8` |
+| `unemu-at` | `fb74f2416feb2511045d9ddae6c4e97697bed785c899542efb3965dee2b607dc` |
 
 ## Deviations from upstream
 
@@ -134,9 +134,9 @@ the same bytes as before (`xi8088` is pinned).
       frame pointer across the reset) change. An error (an exception in
       protected mode, an 8042 timeout) stores 0. A20 is disabled again on the
       way back, and the PICs keep the POST's setup (code 09h does not touch
-      them). 30h–31h are outside every checksum range. The IBM POST then
-      compares the measured size with the configured one, CMOS 17h–18h; that
-      check is uab-ywf.5;
+      them). 30h–31h are outside every checksum range. As the IBM POST
+      does, `AT_CMOS_CHECK` (below) then compares the measured size with the
+      configured one, CMOS 17h–18h (164 on a mismatch);
     - the CPU reset: AH=87h and the POST sizing need the AT's CPU-only
       reset through the 8042 (FEh), which leaves the 8042 system flag,
       CMOS, RAM and the PICs as they were (IBM PC/AT, unemupc98). Where
@@ -261,6 +261,81 @@ the same bytes as before (`xi8088` is pinned).
       CMOS access; the `AT_EXT_MEMORY` code passes it set and enables NMI
       when it is done. `AT_SHUTDOWN` and `AT_EXT_MEMORY` write port 70h
       directly with the same polarity;
+  - `AT_CMOS_CHECK` (`src/config.inc`; the code is in `src/at_cmos.inc`,
+    called from `rtc_init`, `get_floppy`, `get_config_a` and `nvram_save`
+    in `src/rtc.inc` and from the POST and `boot_os` in `src/bios.asm`;
+    requires `AT_RTC_NVRAM` and `AT_EXT_MEMORY`): the CMOS checks of the
+    IBM PC/AT POST. The result goes to the diagnostic status byte, CMOS
+    0Eh, with IBM's bits: 80h battery, 40h checksum, 20h configuration,
+    10h memory size, 04h clock (08h, fixed disk, is never set):
+    - `rtc_init`: RTC register D bit 7 (VRT) clear sets 80h, and 80h in
+      0Eh stays set until the BIOS setup saves, as on the IBM AT (VRT
+      reads 1 again after the first read). Otherwise the sum of 10h–2Dh
+      must be non-zero and equal 2Eh–2Fh (high byte first), or 40h. The
+      NVRAM checksum covers 10h–2Dh everywhere (`nvram_checksum`, used by
+      `rtc_init` and `nvram_save`), where upstream sums 10h–20h; the
+      configuration byte A at 2Dh is inside it. A CMOS saved by an
+      upstream build therefore reads as a bad checksum (162) until the
+      BIOS setup saves it;
+    - with 80h or 40h the CMOS is not rewritten, as on the IBM AT. Upstream
+      prints its own message, clears 10h–20h and writes its defaults;
+      here `get_floppy`, `get_config_a` and the equipment byte read by
+      `rtc_init` return the same defaults (one 1.44 MB drive, equipment
+      21h, configuration byte A 00h) without writing them. On a dead
+      battery the time is still reset to 2010-01-01 00:00 as upstream;
+    - the co-processor bit of the equipment word comes from the detection
+      only; upstream ORs the CMOS bit into it;
+    - `cmos_check` runs after the memory size and the EBDA and before the
+      extension ROM scan. It keeps the base memory size POST found
+      (0040:0013h plus the EBDA this BIOS reserved) in the BIOS data area
+      word 0040:0015h for the setup; that word is IBM's POST-only
+      MFG_ERR_FLAG, which this BIOS does not otherwise use. With a valid
+      CMOS it sets 20h if the equipment byte (14h) does not match the
+      hardware: the diskette bits (0, 7–6) against the drive types in
+      10h, as `nvram_save` sets them (this BIOS takes the drives from 10h
+      and does not probe them; with only the second drive set, one drive,
+      as unemupc98 counts it, is accepted as well as two), the
+      co-processor bit against the detection, and the display type: with
+      a video ROM (AA55h at C0000h–C7FFFh, 2 KiB steps) anything but CGA
+      (10h, 20h), without one monochrome (30h) exactly when the display
+      switch selects the monochrome adapter. It sets 10h if the base
+      memory in 15h–16h (bits 7–6 of 16h ignored) differs from the size
+      POST found, or the extended memory in 17h–18h from 30h–31h. It
+      always sets 04h if the RTC stays in its update cycle (about 4000
+      reads of register A) or a time or date register (00h, 02h, 04h,
+      07h–09h, 32h) is not BCD within its range;
+    - then 0Eh is written and each error is printed, IBM's numbers with
+      this BIOS's wording. `boot_os`, after its F1 check, shows POST code
+      28h, discards the keys typed so far, prints the prompt and waits for
+      F1 (continue) or F2 (run the BIOS setup); if F1 was pressed during
+      the POST, the setup runs without the wait. A valid CMOS prints
+      nothing and adds no wait:
+
+      ```
+      161-CMOS battery failed
+      162-CMOS checksum or configuration error
+      163-Time and date not set
+      164-Memory size error
+      Press F1 to continue, F2 to run BIOS setup
+      ```
+    - the BIOS setup (`nvram_save`) also writes the base memory size kept
+      in 0040:0015h to 15h–16h, 30h–31h to 17h–18h, the display type 00h
+      when a video ROM is present, and 00h to 0Eh. After a 161 or 162 it
+      first clears 11h–13h and 19h–2Ch, so that the new checksum does not
+      cover stale bytes such as the fixed disk types (upstream clears
+      10h–20h on a bad checksum);
+    - differences from the IBM AT: a configuration without a diskette
+      drive, the display type 00h without a video ROM (no display) and
+      monochrome with a video ROM (two adapters) are accepted, as
+      unemupc98 derives them; 14h bits 7–6 are compared with the drive
+      types in 10h, with the tolerance above (IBM compares the second
+      drive type with the drives it finds); after a configuration error
+      (20h) the CMOS equipment byte is still used (IBM falls back to a
+      minimum configuration when its display or diskette check fails);
+      the clock check runs on every POST, also after 161 or 162 (IBM
+      skips it then), and does not wait for an update cycle (the IBM POST
+      waits up to about a second for one); there are no error beeps; F2
+      at the prompt runs the BIOS setup;
   - banner (`src/messages.inc`): "unemu AT BIOS, Version 1.0.2-unemu.1",
     Sergey Kiselev's copyright line unchanged, and a line crediting the
     unemu contributors. `VERSION` is overridden for this configuration only;
@@ -271,15 +346,10 @@ the same bytes as before (`xi8088` is pinned).
 The `MACHINE_UNEMU_AT` configuration targets an IBM PC/AT-compatible board
 (80286, two 8259s, two 8237s, 8042, MC146818). It has the CMOS shutdown-byte
 resume after a processor reset (`AT_SHUTDOWN`: codes 05h, 09h and 0Ah, and
-04h through the POST) and INT 15h AH=87h and AH=88h, with the extended
+04h through the POST), INT 15h AH=87h and AH=88h, with the extended
 memory size measured at POST and A20 disabled after POST
-(`AT_EXT_MEMORY`). It still has to gain at least what AT software expects
-of the system BIOS:
-
-- CMOS configuration checks, with the checksum over 10h–2Dh (the inherited
-  NVRAM setup sums only 10h–20h and keeps its own configuration byte at
-  2Dh), and the comparison of the measured extended memory size (30h–31h)
-  with the configured one (17h–18h).
+(`AT_EXT_MEMORY`), and the CMOS configuration checks with the checksum
+over 10h–2Dh and the 161–164 messages (`AT_CMOS_CHECK`).
 
 The work is tracked in this repository's beads (prefix `uab`). unemupc98 fetches
 released images by SHA-256 and lists them in its firmware catalogue as open
