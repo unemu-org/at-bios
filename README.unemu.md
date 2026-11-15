@@ -40,7 +40,7 @@ depend on the nasm version.
 |---|---|
 | `xi8088` | `1ad458acb1f22dee6b3d9b6bd95e83218a7ddc5389fa2b2c67a4001e689c81a8` |
 | `xi8088-atreset` | `61589573c9809273198b137d9419c87242b0a5f63c2ad834a9565950c3d6becc` |
-| `unemu-at` | `f584466b60a996fdad17d5de3c8168e91a172f27b7045146ec9d4fc4abe0ed2c` |
+| `unemu-at` | `8b4bcfb16f5d04d645f20d3d1d3849141be3765c1898463d70e8b6b0202d7fb8` |
 
 ## Deviations from upstream
 
@@ -72,8 +72,9 @@ the same bytes as before (`xi8088` is pinned).
     - 05h: reads port 60h, sends EOI to the master 8259 and far-jumps
       through 0040:0067h (both masks read FFh);
     - 0Ah: far-jumps through 0040:0067h, the PIC masks left as they were;
-    - 09h (return from INT 15h AH=87h): `block_move_return` with
-      `AT_EXT_MEMORY` (below), a cold start without it;
+    - 09h (return from INT 15h AH=87h or from the POST memory sizing):
+      `block_move_return` with `AT_EXT_MEMORY` (below), a cold start
+      without it;
     - 04h: POST, which then boots the OS through INT 19h. The IBM AT goes
       to INT 19h directly, but this BIOS's floppy code waits for IRQ6,
       which the masked PICs would never deliver;
@@ -113,14 +114,46 @@ the same bytes as before (`xi8088` is pinned).
       CMOS 30h–31h. Later BIOSes clear CF; this one returns the caller's
       flags unchanged, as the IBM AT does. NMI is masked while CMOS is
       read, then port 70h is left at 0Dh (NMI enabled, AT polarity);
-    - interim size in CMOS 30h–31h: on every POST, right after `rtc_init`
-      (after the inherited checksum check, which clears 10h–20h on a
-      mismatch), `ext_mem_size_init` copies the configured extended memory
-      size, CMOS 17h–18h, to 30h–31h, at most 3C00h (15 MiB), with NMI
-      masked. 30h–31h are outside every checksum range. The IBM POST
-      stores the extended memory size it measured there; uab-ywf.5 will
-      measure it and keep the smaller of the configured and measured
-      sizes;
+    - measured size in CMOS 30h–31h: on every POST, right after `rtc_init`,
+      `ext_mem_size_init` measures the memory above 1 MiB, as the IBM POST
+      does, stores the size in KiB in 30h–31h with NMI masked and returns it
+      in AX. The test runs in 80286 protected mode through the block move's
+      own entry and exit (`bm_run`, below, with the GDT on the POST stack and
+      the sizing as the work step instead of the move), so each POST resets
+      the CPU once more through the 8042, with shutdown code 09h. It counts 64
+      KiB blocks from 100000h: the target descriptor is moved to each block in
+      turn, AA55h is written at offset 0 and 55AAh at FFFEh, both are read
+      back and the old words are put back. The first block where either word
+      does not read back ends the count, as does FE0000h, where the AT decodes
+      its ROM, as on the IBM AT (at most EEh blocks, 3B80h KiB); a size that
+      is not a multiple of 64 KiB is rounded down. Two different words, read
+      after both are written, fail on a bus that reads 00h or FFh or the last
+      value written; the 24-bit base does not wrap below 16 MiB. A parity or
+      I/O channel check error latched by the test is cleared. Memory keeps its
+      contents; below 1 MiB only the POST stack and 0040:0067h–0040:006Ah (the
+      frame pointer across the reset) change. An error (an exception in
+      protected mode, an 8042 timeout) stores 0. A20 is disabled again on the
+      way back, and the PICs keep the POST's setup (code 09h does not touch
+      them). 30h–31h are outside every checksum range. The IBM POST then
+      compares the measured size with the configured one, CMOS 17h–18h; that
+      check is uab-ywf.5;
+    - the CPU reset: AH=87h and the POST sizing need the AT's CPU-only
+      reset through the 8042 (FEh), which leaves the 8042 system flag,
+      CMOS, RAM and the PICs as they were (IBM PC/AT, unemupc98). Where
+      the 8042 reset is a full system reset instead (QEMU `isapc`
+      clears the 8042 system flag and CMOS 0Fh, and keeps the other CMOS
+      bytes and RAM, measured), the sizing reset comes back as a power
+      on. So that such a machine still boots, `ext_mem_size_init` writes
+      FFh to CMOS 31h before it sizes (no size reaches it, 15 MiB is
+      3Ch); a POST that finds FFh there skips the sizing and reports the
+      configured size, 17h–18h at most 3C00h, which also clears the mark.
+      On such a machine each boot runs the POST twice (the sizing POST,
+      cut off by the reset, then one with the configured size), and an
+      AH=87h call reboots the machine instead of returning, as it also
+      would with the IBM BIOS. A machine whose reset also clears the
+      CMOS would still reset in a loop. A CMOS that reads FFh at
+      31h at power on (QEMU seeds it so from 65 MiB up) gives one POST
+      with the configured size;
     - INT 15h AH=87h moves CX words (up to 8000h) between the source and
       target descriptors of the caller's 48-byte GDT at ES:SI. The BIOS
       fills the GDT descriptor (08h, limit 2Fh), the code segment (20h,
@@ -142,7 +175,10 @@ the same bytes as before (`xi8088` is pinned).
       and returns with RETF 2 and STI: CF = 0 and ZF = 1 for status 0,
       CF = 1 and ZF = 0 otherwise, the caller's flags dropped, as the IBM
       AT does. An A20 enable timeout returns status 03h the same way,
-      without the reset;
+      without the reset. Everything but the move itself is `bm_run`, which
+      runs the work step its caller names in DI in protected mode: the
+      move for AH=87h, the memory sizing for POST, which calls it the way
+      INT 15h is called (flags, CS, IP on the stack);
     - the status is kept across the reset in the saved AH on the
       caller's stack (the IBM AT keeps it in port 80h, which on the unemu
       AT board is the POST code port and reads FFh). The frame is the
@@ -235,15 +271,15 @@ the same bytes as before (`xi8088` is pinned).
 The `MACHINE_UNEMU_AT` configuration targets an IBM PC/AT-compatible board
 (80286, two 8259s, two 8237s, 8042, MC146818). It has the CMOS shutdown-byte
 resume after a processor reset (`AT_SHUTDOWN`: codes 05h, 09h and 0Ah, and
-04h through the POST) and INT 15h AH=87h and AH=88h, with A20 disabled
-after POST (`AT_EXT_MEMORY`). It still has to gain at least what AT
-software expects of the system BIOS:
+04h through the POST) and INT 15h AH=87h and AH=88h, with the extended
+memory size measured at POST and A20 disabled after POST
+(`AT_EXT_MEMORY`). It still has to gain at least what AT software expects
+of the system BIOS:
 
-- the measured extended memory size in CMOS 30h–31h, which INT 15h AH=88h
-  reports (the IBM POST writes the size it measured there; for now POST
-  copies the configured size from 17h–18h);
 - CMOS configuration checks, with the checksum over 10h–2Dh (the inherited
-  NVRAM setup sums only 10h–20h and keeps its own configuration byte at 2Dh).
+  NVRAM setup sums only 10h–20h and keeps its own configuration byte at
+  2Dh), and the comparison of the measured extended memory size (30h–31h)
+  with the configured one (17h–18h).
 
 The work is tracked in this repository's beads (prefix `uab`). unemupc98 fetches
 released images by SHA-256 and lists them in its firmware catalogue as open

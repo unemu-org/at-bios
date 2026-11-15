@@ -204,10 +204,14 @@
 ; bases) of the caller's GDT at ES:SI in 80286 protected mode, with A20
 ; enabled through the keyboard controller, then resets the CPU through the
 ; keyboard controller with the CMOS shutdown code 09h, disables A20 and
-; returns with AH = status (CF = 1 and ZF = 0 on an error). Interim: POST
-; copies the configured extended memory size (CMOS 17h-18h, at most 15
-; MiB) to 30h-31h; the IBM PC/AT POST stores the size it measured there.
-; POST disables A20 at the end of the keyboard controller initialization,
+; returns with AH = status (CF = 1 and ZF = 0 on an error). As the IBM
+; PC/AT POST does, POST measures the memory above 1 MiB in protected mode,
+; in 64 KiB blocks up to the first one missing (at most 15 MiB), through
+; the same protected mode entry and CPU reset, and stores the size in
+; 30h-31h. Both need the AT's CPU-only reset through the keyboard
+; controller; where that reset is a full system reset, the next POST
+; reports the configured size (CMOS 17h-18h) instead and boots. POST
+; disables A20 at the end of the keyboard controller initialization,
 ; as the IBM PC/AT POST does. Uses 80286 instructions. Requires AT_SHUTDOWN
 ; and AT_CPU
 ; Note: MACHINE_UNEMU_AT sets it

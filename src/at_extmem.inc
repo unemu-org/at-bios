@@ -3,7 +3,7 @@
 ;       INT 15h, functions:
 ;		87h	- Move block (to or from extended memory)
 ;		88h	- Get extended memory size
-;	POST: ext_mem_size_init - the size INT 15h AH=88h reports
+;	POST: ext_mem_size_init - measure the size INT 15h AH=88h reports
 ;	      bm_a20_set - also used by kbc_init to disable A20
 ;-------------------------------------------------------------------------
 ;
@@ -44,6 +44,8 @@ cmos_ext_cfg_hi	equ	18h	; configured extended memory in KiB - high
 cmos_ext_mem_lo	equ	30h	; extended memory size in KiB - low byte
 cmos_ext_mem_hi	equ	31h	; extended memory size in KiB - high byte
 ext_mem_max	equ	3C00h	; 15 MiB, the most an 80286 AT can address
+bm_size_end	equ	0FEh	; bm_size stops at FE0000h, where the AT has
+				; its ROM alias (at most 0EEh blocks)
 bm_shutdown_code equ	09h	; CMOS shutdown code: block move return
 bm_reset_wait	equ	2000	; wait for the CPU reset, 30 ms (15 us units)
 kbc_cmd_wr_out	equ	0D1h	; write keyboard controller output port
@@ -79,35 +81,81 @@ bm_acc_int_gate	equ	86h	; present, DPL 0, 80286 interrupt gate
 bm_frame_ds	equ	0
 bm_frame_es	equ	2
 bm_frame_cx	equ	16
+bm_frame_ax	equ	18	; bm_size: AL = 64 KiB blocks, AH = status
 bm_frame_ah	equ	19	; the status, returned in AH
+; the memory size test (bm_size)
+bm_size_pat0	equ	0AA55h	; test word at the start of a block
+bm_size_pat1	equ	55AAh	; test word at the end of a block
+bm_size_mark	equ	0FFh	; CMOS 31h while the sizing runs (above 3Ch)
 
 ;=========================================================================
-; ext_mem_size_init - set the extended memory size that INT 15h AH=88h
-;	reports (CMOS 30h-31h) from the configured size (CMOS 17h-18h)
+; ext_mem_size_init - measure the extended memory and store its size in
+;	CMOS 30h-31h, which INT 15h AH=88h reports
 ; Input:
-;	none, called from the POST after rtc_init
+;	none, called from the POST after rtc_init, with the stack, the BIOS
+;	data area and the PICs set up
 ; Output:
-;	CMOS 30h-31h = CMOS 17h-18h, at most 3C00h (15 MiB)
+;	AX = extended memory size in KiB, 0 to 3C00h (15 MiB), also stored
+;	in CMOS 30h (low) and 31h (high)
+;	interrupts enabled, A20 disabled, other registers preserved
 ; Notes:
-;	- Interim: the IBM PC/AT POST stores the extended memory size it
-;	  measured in 30h-31h. This POST does not measure extended memory
-;	  yet, so the configured size is reported as it is
+;	- As the IBM PC/AT POST does, the memory above 1 MiB is sized in
+;	  80286 protected mode in 64 KiB blocks, up to the first block that
+;	  does not keep the test words (bm_size). The protected mode entry,
+;	  A20 and the return through a CPU reset with the CMOS shutdown code
+;	  09h are those of INT 15h AH=87h (bm_run), so each POST resets the
+;	  CPU once more. Code 09h leaves the PICs as they are
+;	- The GDT is on the stack, reserved below the block move frame. The
+;	  result comes back in the frame: AL = blocks, AH = status. An error
+;	  (an exception in protected mode, a keyboard controller timeout)
+;	  gives size 0
+;	- Memory keeps its contents: the test words are put back. Below
+;	  1 MiB only the stack and 0040:0067h-0040:006Ah (the frame pointer
+;	  across the reset) change
+;	- The sizing needs the AT's CPU-only reset through the keyboard
+;	  controller. While it runs, CMOS 31h holds FFh, more than any size.
+;	  Where the reset is a full system reset instead (the keyboard
+;	  controller and CMOS 0Fh cleared), it comes back as a power on, and
+;	  the next POST finds FFh: it then skips the sizing and reports the
+;	  configured size (CMOS 17h-18h, at most 15 MiB), which also clears
+;	  the mark, so the machine boots instead of resetting in a loop
+;	- The comparison with the configured size (CMOS 17h-18h) is not
+;	  done here
 ;	- 30h-31h are outside the checksummed CMOS range, no checksum update
 ;	- NMI is masked while CMOS is accessed, then register 0Dh is selected
 ;	  with NMI enabled (AT polarity), as rtc_init leaves bit 7 clear
 ;-------------------------------------------------------------------------
 ext_mem_size_init:
-	push	ax
 	push	bx
-	mov	al,cmos_ext_cfg_hi | cmos_nmi_mask
+	push	cx
+	push	dx
+	push	si
+	push	es
+	mov	al,cmos_ext_mem_hi | cmos_nmi_mask
 	call	rtc_read
-	mov	bh,al
-	mov	al,cmos_ext_cfg_lo | cmos_nmi_mask
-	call	rtc_read
-	mov	bl,al			; BX = configured size, KiB
-	cmp	bx,ext_mem_max
-	jbe	.store
-	mov	bx,ext_mem_max
+	cmp	al,bm_size_mark		; did the last sizing reset the system?
+	je	.configured		; yes, do not size again
+	mov	ax,(bm_size_mark << 8) | cmos_ext_mem_hi | cmos_nmi_mask
+	call	rtc_write		; mark the sizing
+	sub	sp,bm_gdt_size		; the GDT, on the stack
+	mov	si,sp
+	push	ss
+	pop	es			; ES:SI = the GDT
+	xor	ax,ax			; base 100000h, the first block
+	mov	dx,(bm_acc_data << 8) | 10h
+	mov	cx,0FFFFh
+	mov	bx,bm_gdt_dst
+	call	bm_set_desc		; target: bm_size moves it per block
+	pushf				; called as INT 15h AH=87h is:
+	push	cs			; bm_run returns with RETF 2
+	call	.run			; AL = blocks, AH = status, CF = error
+	jnc	.size
+	xor	ax,ax			; an error: no extended memory
+.size:
+	mov	ah,64
+	mul	ah			; AX = size in KiB
+	add	sp,bm_gdt_size
+	mov	bx,ax
 .store:
 	mov	al,cmos_ext_mem_lo | cmos_nmi_mask
 	mov	ah,bl
@@ -117,9 +165,31 @@ ext_mem_size_init:
 	call	rtc_write
 	mov	al,cmos_control_d	; enable NMI (AT polarity)
 	out	rtc_addr_reg,al
+	mov	ax,bx			; AX = size in KiB
+	pop	es
+	pop	si
+	pop	dx
+	pop	cx
 	pop	bx
-	pop	ax
 	ret
+
+.configured:
+	mov	al,cmos_ext_cfg_hi | cmos_nmi_mask
+	call	rtc_read
+	mov	bh,al
+	mov	al,cmos_ext_cfg_lo | cmos_nmi_mask
+	call	rtc_read
+	mov	bl,al			; BX = configured size, KiB
+	cmp	bx,ext_mem_max
+	jbe	.store
+	mov	bx,ext_mem_max
+	jmp	.store
+
+.run:
+	cld
+	pusha				; the block move frame
+	mov	di,bm_size		; the work in protected mode: sizing
+	jmp	bm_run
 
 ;=========================================================================
 ; int_15_fn88 - Get extended memory size
@@ -181,10 +251,14 @@ int_15_fn88:
 ;	  also resets the CPU, returns an error
 ;	- Returns with RETF 2, as the IBM PC/AT BIOS does: the flags are set
 ;	  from the status, and the caller's saved flags are dropped
+;	- bm_run is the protected mode round trip without the move: DI is the
+;	  work to do in protected mode (bm_move, or bm_size for the POST)
 ;-------------------------------------------------------------------------
 int_15_fn87:
 	cld
 	pusha				; save the general registers
+	mov	di,bm_move		; the work in protected mode: the move
+bm_run:
 	push	es
 	push	ds
 	mov	bp,sp			; BP = the block move frame
@@ -248,6 +322,9 @@ int_15_fn87:
 bm_protected:
 	mov	ax,bm_gdt_stack
 	mov	ss,ax			; same stack, SP unchanged
+	jmp	di			; bm_move or bm_size
+
+bm_move:
 	mov	ax,bm_gdt_src
 	mov	ds,ax
 	mov	ax,bm_gdt_dst
@@ -264,12 +341,59 @@ bm_protected:
 	test	al,bm_ppi_chk
 	jz	bm_reset
 	mov	byte [bp+bm_frame_ah],01h ; parity error
+bm_clear_checks:
 	and	al,bm_ppi_keep
 	or	al,bm_ppi_chk_off
 	out	ppi_pb_reg,al		; clear and disable the checks
 	and	al,bm_ppi_keep
 	out	ppi_pb_reg,al		; enable the checks again
 	jmp	bm_reset
+
+;-------------------------------------------------------------------------
+; bm_size - the work of ext_mem_size_init: count the 64 KiB blocks of
+;	memory from 1 MiB up, to the first block that does not keep two
+;	different test words, one at its start and one at its end, or to
+;	FE0000h, as the IBM PC/AT POST does: the AT decodes its ROM at
+;	FE0000h-FFFFFFh. AL in the frame = the number of blocks, AH = 00h
+; Notes:
+;	- The block move target descriptor (18h) is moved to each block in
+;	  turn through the GDT data descriptor (08h). Its base is 24 bits, so
+;	  the blocks do not wrap below 16 MiB
+;	- Two different words, read back after both are written, fail on a
+;	  bus that reads 00h or FFh, or the last value written. The two words
+;	  are put back, so memory keeps its contents
+;	- A parity or I/O channel check error that reading an empty block
+;	  latches is cleared and not reported
+
+bm_size:
+	mov	ax,bm_gdt_gdt
+	mov	ds,ax			; DS = the GDT, to move the target
+	mov	bx,bm_gdt_dst
+	mov	dl,10h			; the first block, at 1 MiB
+.block:
+	mov	[bm_gdt_dst+bm_desc_base_hi],dl ; block base = DL * 64 KiB
+	mov	es,bx			; ES = the block
+	mov	si,[es:0]		; keep the words the test changes
+	mov	di,[es:0FFFEh]
+	mov	word [es:0],bm_size_pat0
+	mov	word [es:0FFFEh],bm_size_pat1
+	mov	ax,[es:0]		; read both back
+	mov	cx,[es:0FFFEh]
+	mov	[es:0],si		; put the old words back
+	mov	[es:0FFFEh],di
+	xor	ax,bm_size_pat0
+	xor	cx,bm_size_pat1
+	or	ax,cx
+	jnz	.done			; no memory here
+	inc	dl			; next block
+	cmp	dl,bm_size_end
+	jb	.block			; up to FE0000h
+.done:
+	sub	dl,10h			; DL = blocks found, 0EEh at most
+	mov	dh,00h			; status: done
+	mov	[bp+bm_frame_ax],dx	; AL = blocks, AH = status
+	in	al,ppi_pb_reg
+	jmp	bm_clear_checks
 
 ;-------------------------------------------------------------------------
 ; bm_exception - any exception in protected mode: status 02h, CPU reset
@@ -302,10 +426,11 @@ bm_reset:
 ;	DS = BIOS data area, interrupts disabled
 ;	0040:0067h = SP, 0040:0069h = SS of the block move frame
 ;	Entered from shutdown_check (shutdown code 09h, NMI masked, the
-;	CMOS shutdown byte cleared), or from int_15_fn87 when A20 cannot
-;	be enabled
+;	CMOS shutdown byte cleared), or from bm_run when A20 cannot be
+;	enabled
 ; Output:
-;	returns to the INT 15h caller, see int_15_fn87
+;	returns to the INT 15h caller, see int_15_fn87 (or to
+;	ext_mem_size_init, which calls bm_run the same way)
 ;-------------------------------------------------------------------------
 block_move_return:
 	mov	ss,[69h]		; the caller's stack

@@ -39,7 +39,8 @@
 ;		05h	- PICs initialized and masked, EOI, keyboard
 ;			  controller output buffer flushed, far jump
 ;			  through 0040:0067h
-;		09h	- return from INT 15h AH=87h (block move)
+;		09h	- return from INT 15h AH=87h (block move), or from
+;			  the POST extended memory sizing
 ;		0Ah	- far jump through 0040:0067h, PICs untouched
 ;		others	- PICs initialized, POST, warm boot flag kept
 ; Notes:
@@ -130,8 +131,9 @@ shutdown_jump:
 	jmp	far [67h]		; resume the program
 
 ;-------------------------------------------------------------------------
-; shutdown code 09h - return from the INT 15h AH=87h block move
-; (block_move_return in at_extmem.inc), a cold start without AT_EXT_MEMORY
+; shutdown code 09h - return from the INT 15h AH=87h block move or the POST
+; extended memory sizing (block_move_return in at_extmem.inc), a cold start
+; without AT_EXT_MEMORY
 
 shutdown_block_move:
 %ifdef AT_EXT_MEMORY
