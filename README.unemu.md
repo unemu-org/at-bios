@@ -40,7 +40,7 @@ depend on the nasm version.
 |---|---|
 | `xi8088` | `1ad458acb1f22dee6b3d9b6bd95e83218a7ddc5389fa2b2c67a4001e689c81a8` |
 | `xi8088-atreset` | `61589573c9809273198b137d9419c87242b0a5f63c2ad834a9565950c3d6becc` |
-| `unemu-at` | `5f0c3658582a02a0ec260b5fa887b7dde66730f7bb080d813fa9967bc264b2fe` |
+| `unemu-at` | `e3c76c1f993d0ec335cbbff491fc6c28b10d16879747eb9657853c5da7a13e54` |
 
 ## Deviations from upstream
 
@@ -53,6 +53,42 @@ the same bytes as before (`xi8088` is pinned).
   above 1 or for a drive that is not configured. The `xi8088-atreset` variant
   is Xi 8088 plus this define; it gives the same bytes as the former
   `patches/at-reset.patch` build.
+- `AT_SHUTDOWN` (`src/config.inc`; the code is in `src/at_shutdown.inc`,
+  included from `src/bios.asm`): the soft-reset handling of the IBM PC AT
+  BIOS. The reset vector and `cold_start` stay at F000:FFF0h and
+  F000:E05Bh; `cold_start` now first jumps to `shutdown_check`, before
+  anything writes RAM, programs the PICs or DMA or sends an 8042 command,
+  and without a stack. The entry paths:
+  - power-on (8042 system flag, status bit 2, clear; POST sets it at the
+    end of `kbc_init`): CMOS 0Fh (the shutdown byte) is cleared, so a stale
+    code cannot take over the next soft reset, then a cold POST, which
+    clears the warm boot flag at 0040:0072h;
+  - soft reset (system flag set: a CPU reset through the 8042, a triple
+    fault, or a jump to the reset vector after POST): CMOS 0Fh is read with
+    NMI masked (8Fh to port 70h, AT polarity); except for codes 09h and
+    0Ah, the coprocessor is reset (port F1h) and both 8259s are
+    reinitialised, all masked; 0Fh is cleared to 00h (another reset then
+    runs the POST), SS:SP is set to 0000:0400h, and by the code:
+    - 05h: reads port 60h, sends EOI to the master 8259 and far-jumps
+      through 0040:0067h (both masks read FFh);
+    - 0Ah: far-jumps through 0040:0067h, the PIC masks left as they were;
+    - 09h (return from INT 15h AH=87h): a cold start until the block move
+      exists (`shutdown_block_move`);
+    - 04h: POST, which then boots the OS through INT 19h. The IBM AT goes
+      to INT 19h directly, but this BIOS's floppy code waits for IRQ6,
+      which the masked PICs would never deliver;
+    - 00h and any other code: POST, keeping 0040:0072h;
+  - IOCHK NMI reboot (`int_02`, key 'r'): a forced cold POST through
+    `shutdown_cold`, with 0Fh and 0040:0072h cleared and no dispatch;
+  - Ctrl+Alt+Del: as upstream, straight to `warm_start` with 1234h.
+
+  The warm boot flag is one-shot, as on the IBM AT: POST clears it before
+  it boots the OS (`boot_os`), so 1234h set by Ctrl+Alt+Del or by a program
+  before a soft reset skips the memory test once. A program resumed
+  through 0040:0067h gets control in real mode with interrupts disabled and
+  NMI masked; nothing on that path writes RAM or sends an 8042 command, so
+  A20 stays as it was. Upstream clears 0040:0072h on every entry to
+  `cold_start`, keeps it after POST, and has no shutdown-byte dispatch.
 - `MACHINE_UNEMU_AT` (`src/config.inc`): the configuration of the unemu AT
   board, an emulated IBM PC/AT-compatible 80286 board. It starts from
   `MACHINE_XI8088` and keeps its settings (model byte FCh, AT RTC and CMOS
@@ -66,7 +102,7 @@ the same bytes as before (`xi8088` is pinned).
     both ~IOCHK and the RAM parity check (on the AT the parity latch clears
     only through bit 2), then 00h enables both with the speaker off; the
     Xi 8088 writes only 08h before 00h, and its 00h also means turbo off;
-  - `FLOPPY_RESET_ANY_DRIVE` is set (above);
+  - `FLOPPY_RESET_ANY_DRIVE` and `AT_SHUTDOWN` are set (above);
   - `AT_DISPLAY_SWITCH` (`src/config.inc`, used in `src/at_kbc.inc`): the
     display type switch, bit 6 of the 8042 input port (command C0h), is read
     with the IBM PC/AT polarity: 0 (jumper installed) selects the colour
@@ -94,12 +130,13 @@ the same bytes as before (`xi8088` is pinned).
 ## Plan
 
 The `MACHINE_UNEMU_AT` configuration targets an IBM PC/AT-compatible board
-(80286, two 8259s, two 8237s, 8042, MC146818). It still has to gain at least
-what AT software expects of the system BIOS:
+(80286, two 8259s, two 8237s, 8042, MC146818). It has the CMOS shutdown-byte
+resume after a processor reset (`AT_SHUTDOWN`: codes 05h and 0Ah, and 04h
+through the POST). It still has to gain at least what AT software expects
+of the system BIOS:
 
-- the CMOS shutdown-byte resume after a processor reset (codes 05h, 09h and
-  0Ah through 0040:0067h);
-- INT 15h AH=87h (block move) and AH=88h (extended memory size);
+- INT 15h AH=87h (block move) with its return through shutdown code 09h
+  (dispatched, a cold start until then), and AH=88h (extended memory size);
 - A20 control through the 8042;
 - CMOS configuration checks, with the checksum over 10h–2Dh (the inherited
   NVRAM setup sums only 10h–20h and keeps its own configuration byte at 2Dh).
@@ -107,7 +144,7 @@ what AT software expects of the system BIOS:
 Inherited behaviour that is not yet AT-correct:
 
 - the NMI mask polarity of port 70h is the reverse of the IBM AT's (bit 7
-  set masks NMI on the AT);
+  set masks NMI on the AT); only the `AT_SHUTDOWN` code uses the AT's;
 - only the first 8237 is initialised (the second, with channel 4 in cascade
   mode, is not), and port C0h, the second 8237's channel 4 address register,
   is used as a scratch I/O-delay port.

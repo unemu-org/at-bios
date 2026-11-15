@@ -360,6 +360,10 @@ boot_os:
 %endif ; BIOS_SETUP
 %endif ; TURBO_MODE
 
+%ifdef AT_SHUTDOWN
+	mov	word [warm_boot],0	; warm boot flag is good for one POST
+%endif ; AT_SHUTDOWN
+
 	mov	al,e_boot		; boot the OS POST code
 	out	post_reg,al
 
@@ -697,11 +701,19 @@ init_v40:
 	jmp	post_init_v40
 %endif
 
+%ifdef AT_SHUTDOWN
+%include	"at_shutdown.inc"	; CMOS shutdown byte dispatch
+%endif ; AT_SHUTDOWN
+
 ;=========================================================================
 ; cold_start, warm_start - BIOS POST (Power on Self Test) starts here
 ;-------------------------------------------------------------------------	
 	setloc	0E05Bh		; POST Entry Point
 cold_start:
+%ifdef AT_SHUTDOWN
+	jmp	shutdown_check		; power on or soft reset?
+cold_start_power_on:
+%endif ; AT_SHUTDOWN
 	mov	ax,biosdseg
 	mov	ds,ax
 	mov	word [warm_boot],0	; indicate cold boot
@@ -1283,7 +1295,11 @@ int_02:
 	cmp	al,'i'
 	je	.ignore			; enable NMIs and exit
 	cmp	al,'r'
+%ifdef AT_SHUTDOWN
+	je	shutdown_cold		; always a cold start
+%else ; AT_SHUTDOWN
 	je	cold_start
+%endif ; AT_SHUTDOWN
 	jmp	.1
 .ignore:
 %ifdef AT_NMI
