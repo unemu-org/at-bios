@@ -40,7 +40,7 @@ depend on the nasm version.
 |---|---|
 | `xi8088` | `1ad458acb1f22dee6b3d9b6bd95e83218a7ddc5389fa2b2c67a4001e689c81a8` |
 | `xi8088-atreset` | `61589573c9809273198b137d9419c87242b0a5f63c2ad834a9565950c3d6becc` |
-| `unemu-at` | `d0f637d62bdbf8e8ea1d2f89aeb6646e57877aab7b0d304c0947b9613c6d6464` |
+| `unemu-at` | `36085ec4db0016e01cfd653f591dc42157bbd5383f2134ed80f1dbda0011d7a5` |
 
 ## Deviations from upstream
 
@@ -147,6 +147,20 @@ the same bytes as before (`xi8088` is pinned).
       caller's stack (the IBM AT keeps it in port 80h, which on the unemu
       AT board is the POST code port and reads FFh). The frame is the
       IBM one: the general registers, then ES, then DS;
+    - A20 at POST: the 8042 may enable A20 at power on and on its
+      self-test command (AAh, early in `kbc_init`, `src/at_kbc.inc`). As
+      the IBM PC/AT POST does, right after the command byte that sets the
+      system flag, `kbc_init` disables A20 with the block move's helper
+      (D1h, DDh: output port bit 1 clear, bit 0 set, so no CPU reset),
+      and the OS boots with A20 disabled. The write waits only for the
+      8042 input buffer; a byte left in the output buffer stays there,
+      as D1h returns none, and the auxiliary interface is disabled by
+      then. A timeout halts with the 8042 command failure code, as for
+      the command byte before it. Every POST does this: at power on,
+      after a soft reset with a code other than 05h, 09h or 0Ah, after
+      Ctrl+Alt+Del and after the IOCHK NMI reboot. The 05h, 09h and 0Ah
+      resumes do not reach `kbc_init` (09h disables A20 in
+      `block_move_return`). Upstream leaves A20 as the 8042 has it;
   - `AT_DISPLAY_SWITCH` (`src/config.inc`, used in `src/at_kbc.inc`): the
     display type switch, bit 6 of the 8042 input port (command C0h), is read
     with the IBM PC/AT polarity: 0 (jumper installed) selects the colour
@@ -192,14 +206,13 @@ the same bytes as before (`xi8088` is pinned).
 The `MACHINE_UNEMU_AT` configuration targets an IBM PC/AT-compatible board
 (80286, two 8259s, two 8237s, 8042, MC146818). It has the CMOS shutdown-byte
 resume after a processor reset (`AT_SHUTDOWN`: codes 05h, 09h and 0Ah, and
-04h through the POST) and INT 15h AH=87h and AH=88h (`AT_EXT_MEMORY`). It
-still has to gain at least what AT software expects of the system BIOS:
+04h through the POST) and INT 15h AH=87h and AH=88h, with A20 disabled
+after POST (`AT_EXT_MEMORY`). It still has to gain at least what AT
+software expects of the system BIOS:
 
 - the measured extended memory size in CMOS 30h–31h, which INT 15h AH=88h
   reports (the IBM POST writes the size it measured there; for now POST
   copies the configured size from 17h–18h);
-- A20 left disabled after POST, as on the IBM AT (the 8042 self-test may
-  enable it; only the block move return disables it);
 - CMOS configuration checks, with the checksum over 10h–2Dh (the inherited
   NVRAM setup sums only 10h–20h and keeps its own configuration byte at 2Dh).
 

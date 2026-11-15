@@ -206,6 +206,8 @@
 ; returns with AH = status (CF = 1 and ZF = 0 on an error). Interim: POST
 ; copies the configured extended memory size (CMOS 17h-18h, at most 15
 ; MiB) to 30h-31h; the IBM PC/AT POST stores the size it measured there.
-; Uses 80286 instructions. Requires AT_SHUTDOWN and AT_CPU
+; POST disables A20 at the end of the keyboard controller initialization,
+; as the IBM PC/AT POST does. Uses 80286 instructions. Requires AT_SHUTDOWN
+; and AT_CPU
 ; Note: MACHINE_UNEMU_AT sets it
 ; %define AT_EXT_MEMORY

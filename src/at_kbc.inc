@@ -589,6 +589,16 @@ kbc_init:
 	call	kbc_send_cmd
 	jc	kbc_cmd_fail
 
+%ifdef AT_EXT_MEMORY
+;-------------------------------------------------------------------------
+; Disable A20, as the IBM PC/AT POST does. The keyboard controller may
+; enable it at power on and on the self-test command
+
+	mov	ah,kbc_out_a20_off	; output port: A20 disabled, no CPU reset
+	call	bm_a20_set
+	jc	kbc_cmd_fail
+%endif ; AT_EXT_MEMORY
+
 ;-------------------------------------------------------------------------
 ; Enable keyboard
 

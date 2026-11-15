@@ -4,6 +4,7 @@
 ;		87h	- Move block (to or from extended memory)
 ;		88h	- Get extended memory size
 ;	POST: ext_mem_size_init - the size INT 15h AH=88h reports
+;	      bm_a20_set - also used by kbc_init to disable A20
 ;-------------------------------------------------------------------------
 ;
 ; Compiles with NASM 2.13.02, might work with other versions
