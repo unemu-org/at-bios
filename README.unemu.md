@@ -40,7 +40,7 @@ depend on the nasm version.
 |---|---|
 | `xi8088` | `1ad458acb1f22dee6b3d9b6bd95e83218a7ddc5389fa2b2c67a4001e689c81a8` |
 | `xi8088-atreset` | `61589573c9809273198b137d9419c87242b0a5f63c2ad834a9565950c3d6becc` |
-| `unemu-at` | `c3899dc14cb3ea9cde0bd7e0a8823efdeab4586679be152cc07011c1a83c3194` |
+| `unemu-at` | `db6eb04faabe58378246f7c5bf14ec2a316ca8bdb80839b137a8ec850c1dcf64` |
 
 ## Deviations from upstream
 
@@ -67,6 +67,14 @@ the same bytes as before (`xi8088` is pinned).
     only through bit 2), then 00h enables both with the speaker off; the
     Xi 8088 writes only 08h before 00h, and its 00h also means turbo off;
   - `FLOPPY_RESET_ANY_DRIVE` is set (above);
+  - `AT_DISPLAY_SWITCH` (`src/config.inc`, used in `src/at_kbc.inc`): the
+    display type switch, bit 6 of the 8042 input port (command C0h), is read
+    with the IBM PC/AT polarity: 0 (jumper installed) selects the colour
+    adapter, 1 (no jumper) the monochrome adapter, and POST sets the
+    equipment word's video bits (4–5) to 80x25 colour or monochrome
+    accordingly. The Xi 8088 switch SW2-8 reads the other way (off, bit 6
+    set, is CGA), so the unemu machines can use the same switch setting
+    for this BIOS and the IBM one;
   - banner (`src/messages.inc`): "unemu AT BIOS, Version 1.0.2-unemu.1",
     Sergey Kiselev's copyright line unchanged, and a line crediting the
     unemu contributors. `VERSION` is overridden for this configuration only;
@@ -82,7 +90,6 @@ what AT software expects of the system BIOS:
   0Ah through 0040:0067h);
 - INT 15h AH=87h (block move) and AH=88h (extended memory size);
 - A20 control through the 8042;
-- the AT display switch read with IBM polarity;
 - CMOS configuration checks, with the checksum over 10h–2Dh (the inherited
   NVRAM setup sums only 10h–20h and keeps its own configuration byte at 2Dh).
 

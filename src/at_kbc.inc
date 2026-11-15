@@ -466,7 +466,11 @@ kbc_init:
 
 	call	kbc_data_read		; wait and read input port value
 	test	al,kbc_in_display
+%ifdef AT_DISPLAY_SWITCH
+	jz	.get_disp_color		; input port bit 6 clear => CGA display
+%else ; AT_DISPLAY_SWITCH
 	jnz	.get_disp_color		; input port bit 6 set => CGA display
+%endif ; AT_DISPLAY_SWITCH
 	or	word [equipment_list],equip_mono
 	jmp	.get_disp_done
 .get_disp_color:

@@ -55,8 +55,9 @@
 
 ; Settings for the unemu AT board (emulated IBM PC/AT-compatible 80286 board)
 ; Same as Xi 8088, except: no TURBO_MODE (on the AT, bit 2 of port 61h
-; disables the RAM parity check, it is not a turbo switch), its own VERSION
-; and FLOPPY_RESET_ANY_DRIVE. See README.unemu.md for all differences
+; disables the RAM parity check, it is not a turbo switch), its own VERSION,
+; FLOPPY_RESET_ANY_DRIVE and AT_DISPLAY_SWITCH. See README.unemu.md for all
+; differences
 %ifdef MACHINE_UNEMU_AT
 %define VERSION		'1.0.2-unemu.1'	; unemu AT BIOS version
 %define	START		8000h		; BIOS starts at offset 8000h
@@ -75,6 +76,7 @@
 %define EBDA_SIZE	1		; 1KB reserved for EBDA
 					; EBDA is required for PS/2 aux support
 %define FLOPPY_RESET_ANY_DRIVE		; INT 13h AH=00h accepts any drive
+%define AT_DISPLAY_SWITCH		; IBM PC/AT display switch polarity
 %endif ; MACHINE_UNEMU_AT
 
 ; Settings for FE2010A
@@ -152,3 +154,9 @@
 ; including fixed disk reset requests, as the IBM PC/AT BIOS does
 ; Note: MACHINE_UNEMU_AT sets it
 ; %define FLOPPY_RESET_ANY_DRIVE
+
+; Read the display type switch (keyboard controller input port bit 6) with
+; the IBM PC/AT polarity: 0 = color adapter, 1 = monochrome adapter
+; The Xi 8088 switch SW2-8 reads the other way: 0 (on) = MDA, 1 (off) = CGA
+; Note: MACHINE_UNEMU_AT sets it
+; %define AT_DISPLAY_SWITCH

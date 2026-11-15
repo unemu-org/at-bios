@@ -75,7 +75,7 @@
         unemu-at = romFor system {
           name = "unemu-at";
           defines = [ "MACHINE_UNEMU_AT" ];
-          sha256 = "c3899dc14cb3ea9cde0bd7e0a8823efdeab4586679be152cc07011c1a83c3194";
+          sha256 = "db6eb04faabe58378246f7c5bf14ec2a316ca8bdb80839b137a8ec850c1dcf64";
         };
       };
     in
