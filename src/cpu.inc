@@ -29,6 +29,7 @@ flags_tf	equ	0100h		; TF flag - enables single-step
 ; Note:
 ;	- Designed to detect 8088, 80C88, and V20 CPU. Likely will return
 ;	  incorrect results if used on other CPU types.
+;	- With AT_CPU, also detects 80286 and 80386 or later CPUs.
 ;-------------------------------------------------------------------------
 detect_cpu:
 	push	ax
@@ -38,6 +39,35 @@ detect_cpu:
 
 	mov	si,msg_cpu
 	call	print
+
+%ifdef AT_CPU
+; test for 80286 or later, using 8086 instructions only
+; FLAGS bits 15-12 always read as 1 on 8088, 80C88 and NEC V20, and as 0
+; on 80286 in real mode; 80386 and later keep bit 15 clear, but POPF can
+; set bits 14-12 (IOPL and NT) in real mode
+	pushf
+	pop	ax			; AX = FLAGS
+	test	ah,80h			; bit 15 is set on 8088 and V20
+	jnz	.not_286		; go to the 8088 and V20 tests
+	mov	si,ax			; save original FLAGS to SI
+	or	ah,70h			; try to set IOPL and NT
+	push	ax
+	popf
+	pushf
+	pop	ax			; AX = FLAGS read back
+	push	si
+	popf				; restore original FLAGS
+	mov	si,msg_cpu_80286
+	test	ah,70h			; 80286 keeps IOPL and NT clear
+	jz	.print_286
+	mov	si,msg_cpu_80386
+.print_286:
+	call	print
+	xor	ax,ax			; AX = 0 - not 8088 '78, so no
+					;   interrupt warning is printed
+	jmp	.cpu_freq
+.not_286:
+%endif ; AT_CPU
 
 ; test for NEC V20
 	mov	ax,0101h
@@ -333,7 +363,13 @@ detect_fpu:
 	mov	cx,word [test_word]	; save test_word to CX
 	mov	word [test_word],0000h	; clear space for control word
 	fnstcw	word [test_word]	; store control word
+%ifdef AT_CPU
+	and	byte [test_word],7Fh	; ignore bit 7 (IEM of 8087 and 80287)
+	cmp	word [test_word],037Fh	; 80287 sets 03FFh, 80287XL and 80387
+					;   set 037Fh
+%else ; AT_CPU
 	cmp	word [test_word],03FFh	; 8087 sets control word to 03FFh
+%endif ; AT_CPU
 	jne	.no_fpu			;   after finit
 
 .fpu:

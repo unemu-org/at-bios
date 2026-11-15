@@ -82,7 +82,14 @@ msg_cpu_nec_v20 db      'NEC V20', 00h
 %ifdef MACHINE_HOMEBREW8088
 msg_cpu_nec_v40	db	'NEC V40', 00h
 %endif ; MACHINE_HOMEBREW8088
+%ifdef AT_CPU
+msg_cpu_80286	db	'Intel 80286', 00h
+msg_cpu_80386	db	'Intel 80386 or later', 00h
+; 80286 board: an 80387 used with an 80386 or later is also shown as 80287
+msg_fpu_present db      'Intel 80287', 0Dh, 0Ah, 00h
+%else ; AT_CPU
 msg_fpu_present db      'Intel 8087', 0Dh, 0Ah, 00h
+%endif ; AT_CPU
 %ifdef MACHINE_FE2010A
 msg_chipset	db	'Chipset:                    ', 00h
 msg_fe2010	db	'Faraday FE2010', 0Dh, 0Ah, 00h

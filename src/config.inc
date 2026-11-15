@@ -56,8 +56,8 @@
 ; Settings for the unemu AT board (emulated IBM PC/AT-compatible 80286 board)
 ; Same as Xi 8088, except: no TURBO_MODE (on the AT, bit 2 of port 61h
 ; disables the RAM parity check, it is not a turbo switch), its own VERSION,
-; FLOPPY_RESET_ANY_DRIVE and AT_DISPLAY_SWITCH. See README.unemu.md for all
-; differences
+; FLOPPY_RESET_ANY_DRIVE, AT_DISPLAY_SWITCH and AT_CPU. See README.unemu.md
+; for all differences
 %ifdef MACHINE_UNEMU_AT
 %define VERSION		'1.0.2-unemu.1'	; unemu AT BIOS version
 %define	START		8000h		; BIOS starts at offset 8000h
@@ -77,6 +77,7 @@
 					; EBDA is required for PS/2 aux support
 %define FLOPPY_RESET_ANY_DRIVE		; INT 13h AH=00h accepts any drive
 %define AT_DISPLAY_SWITCH		; IBM PC/AT display switch polarity
+%define AT_CPU				; Has 80286 CPU and 80287 FPU socket
 %endif ; MACHINE_UNEMU_AT
 
 ; Settings for FE2010A
@@ -160,3 +161,10 @@
 ; The Xi 8088 switch SW2-8 reads the other way: 0 (on) = MDA, 1 (off) = CGA
 ; Note: MACHINE_UNEMU_AT sets it
 ; %define AT_DISPLAY_SWITCH
+; The board has an 80286 CPU: POST detects 80286 and 80386 or later CPUs
+; before the 8088 and V20 tests, accepts the co-processor control word
+; 037Fh (80287XL, 80387) as well as 03FFh after FNINIT, and reports the
+; co-processor as 80287 (an 8087 cannot be used with an 80286). The
+; detection code uses 8086 instructions only
+; Note: MACHINE_UNEMU_AT sets it
+; %define AT_CPU

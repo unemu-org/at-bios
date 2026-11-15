@@ -40,7 +40,7 @@ depend on the nasm version.
 |---|---|
 | `xi8088` | `1ad458acb1f22dee6b3d9b6bd95e83218a7ddc5389fa2b2c67a4001e689c81a8` |
 | `xi8088-atreset` | `61589573c9809273198b137d9419c87242b0a5f63c2ad834a9565950c3d6becc` |
-| `unemu-at` | `db6eb04faabe58378246f7c5bf14ec2a316ca8bdb80839b137a8ec850c1dcf64` |
+| `unemu-at` | `5f0c3658582a02a0ec260b5fa887b7dde66730f7bb080d813fa9967bc264b2fe` |
 
 ## Deviations from upstream
 
@@ -75,6 +75,17 @@ the same bytes as before (`xi8088` is pinned).
     accordingly. The Xi 8088 switch SW2-8 reads the other way (off, bit 6
     set, is CGA), so the unemu machines can use the same switch setting
     for this BIOS and the IBM one;
+  - `AT_CPU` (`src/config.inc`, used in `src/cpu.inc` and
+    `src/messages.inc`): POST tells the 80286 apart before the 8088 and V20
+    tests and prints "Intel 80286" (or "Intel 80386 or later") without the
+    8088 interrupt warning. FLAGS bit 15 always reads 1 on the 8088, 80C88
+    and V20 and 0 on the 80286 and later; in real mode the 80286 also keeps
+    bits 14–12 (IOPL, NT) clear when POPF tries to set them, the 80386 does
+    not. The test uses 8086 instructions only. The co-processor test accepts
+    the control word 037Fh (80287XL, 80387) after FNINIT as well as 03FFh
+    (8087, 80287), where upstream accepts only 03FFh; a co-processor is
+    reported as "Intel 80287", as an 8087 cannot be used with an 80286 (an
+    80387 with an 80386 or later is shown the same way);
   - banner (`src/messages.inc`): "unemu AT BIOS, Version 1.0.2-unemu.1",
     Sergey Kiselev's copyright line unchanged, and a line crediting the
     unemu contributors. `VERSION` is overridden for this configuration only;
@@ -97,8 +108,6 @@ Inherited behaviour that is not yet AT-correct:
 
 - the NMI mask polarity of port 70h is the reverse of the IBM AT's (bit 7
   set masks NMI on the AT);
-- CPU detection knows only the 8088, 80C88 and V20, so an 80286 is reported
-  as an 8088;
 - only the first 8237 is initialised (the second, with channel 4 in cascade
   mode, is not), and port C0h, the second 8237's channel 4 address register,
   is used as a scratch I/O-delay port.
