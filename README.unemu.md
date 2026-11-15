@@ -40,7 +40,7 @@ depend on the nasm version.
 |---|---|
 | `xi8088` | `1ad458acb1f22dee6b3d9b6bd95e83218a7ddc5389fa2b2c67a4001e689c81a8` |
 | `xi8088-atreset` | `61589573c9809273198b137d9419c87242b0a5f63c2ad834a9565950c3d6becc` |
-| `unemu-at` | `e3c76c1f993d0ec335cbbff491fc6c28b10d16879747eb9657853c5da7a13e54` |
+| `unemu-at` | `2534ed978ba5f76aabda2579800ee9f418f00b983f9e9b3edbe6a52805872868` |
 
 ## Deviations from upstream
 
@@ -122,6 +122,22 @@ the same bytes as before (`xi8088` is pinned).
     (8087, 80287), where upstream accepts only 03FFh; a co-processor is
     reported as "Intel 80287", as an 8087 cannot be used with an 80286 (an
     80387 with an 80386 or later is shown the same way);
+  - `AT_DMA` (`src/config.inc`; the code is in `src/at_dma.inc`, reached by
+    a jump from the POST DMA initialization in `src/bios.asm`, where there
+    is no stack yet): after the first 8237, POST initialises the second
+    (channels 4–7, ports C0h–DFh) as the IBM PC/AT POST does: a master
+    clear (DAh), channel 4 in cascade mode (C0h to the mode register, D6h)
+    and unmasked (00h to the single mask register, D4h), so that channels
+    0–3 reach the bus through it. As upstream does for the first 8237, the
+    other channels (5–7) get single mode, verify, and stay masked; the
+    command register (D0h) and their page registers (8Bh, 89h, 8Ah) are
+    cleared. The scratch port `unused_reg`, written to set the ISA data
+    bus before the serial and parallel port detection reads and as an I/O
+    delay in INT 17h, moves from C0h (on the AT, the second 8237's channel
+    4 address register: every write there toggles that controller's byte
+    flip-flop) to 8Eh, a DMA page register the AT does not use. Port 80h
+    is not used for it, so the POST codes there stay those of the POST
+    stages;
   - banner (`src/messages.inc`): "unemu AT BIOS, Version 1.0.2-unemu.1",
     Sergey Kiselev's copyright line unchanged, and a line crediting the
     unemu contributors. `VERSION` is overridden for this configuration only;
@@ -144,10 +160,7 @@ of the system BIOS:
 Inherited behaviour that is not yet AT-correct:
 
 - the NMI mask polarity of port 70h is the reverse of the IBM AT's (bit 7
-  set masks NMI on the AT); only the `AT_SHUTDOWN` code uses the AT's;
-- only the first 8237 is initialised (the second, with channel 4 in cascade
-  mode, is not), and port C0h, the second 8237's channel 4 address register,
-  is used as a scratch I/O-delay port.
+  set masks NMI on the AT); only the `AT_SHUTDOWN` code uses the AT's.
 
 The work is tracked in this repository's beads (prefix `uab`). unemupc98 fetches
 released images by SHA-256 and lists them in its firmware catalogue as open

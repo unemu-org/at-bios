@@ -153,7 +153,13 @@ nmi_mask_reg	equ	0A0h
 pic2_reg0	equ	0A0h
 pic2_reg1	equ	0A1h
 %endif ; SECOND_PIC
+%ifdef AT_DMA
+unused_reg	equ	8Eh	; used for hardware detection and I/O delays
+			; an unused DMA page register: on the AT 0C0h is
+			; the second DMAC's channel 4 address register
+%else ; AT_DMA
 unused_reg	equ	0C0h	; used for hardware detection and I/O delays
+%endif ; AT_DMA
 cga_mode_reg	equ	3D8h
 mda_mode_reg	equ	3B8h
 
@@ -705,6 +711,10 @@ init_v40:
 %include	"at_shutdown.inc"	; CMOS shutdown byte dispatch
 %endif ; AT_SHUTDOWN
 
+%ifdef AT_DMA
+%include	"at_dma.inc"		; second DMAC initialization
+%endif ; AT_DMA
+
 ;=========================================================================
 ; cold_start, warm_start - BIOS POST (Power on Self Test) starts here
 ;-------------------------------------------------------------------------	
@@ -893,6 +903,10 @@ cpu_ok:
  	out	81h,al			; DMA Page, channel 2
  	out	82h,al			; DMA Page, channel 3
  	out	83h,al			; DMA Page, channels 0,1
+%ifdef AT_DMA
+	jmp	dmac2_init		; initialize the second DMAC
+dmac2_init_done:
+%endif ; AT_DMA
 
 ;-------------------------------------------------------------------------
 ; Test first 32 KiB (MIN_RAM_SIZE) of RAM

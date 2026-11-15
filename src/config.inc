@@ -56,8 +56,8 @@
 ; Settings for the unemu AT board (emulated IBM PC/AT-compatible 80286 board)
 ; Same as Xi 8088, except: no TURBO_MODE (on the AT, bit 2 of port 61h
 ; disables the RAM parity check, it is not a turbo switch), its own VERSION,
-; FLOPPY_RESET_ANY_DRIVE, AT_DISPLAY_SWITCH, AT_CPU and AT_SHUTDOWN. See
-; README.unemu.md for all differences
+; FLOPPY_RESET_ANY_DRIVE, AT_DISPLAY_SWITCH, AT_CPU, AT_SHUTDOWN and AT_DMA.
+; See README.unemu.md for all differences
 %ifdef MACHINE_UNEMU_AT
 %define VERSION		'1.0.2-unemu.1'	; unemu AT BIOS version
 %define	START		8000h		; BIOS starts at offset 8000h
@@ -79,6 +79,7 @@
 %define AT_DISPLAY_SWITCH		; IBM PC/AT display switch polarity
 %define AT_CPU				; Has 80286 CPU and 80287 FPU socket
 %define AT_SHUTDOWN			; CMOS shutdown byte resume
+%define AT_DMA				; Has two DMACs (AT-style)
 %endif ; MACHINE_UNEMU_AT
 
 ; Settings for FE2010A
@@ -183,3 +184,13 @@
 ; masks NMI). Requires AT_KEYBOARD, AT_RTC and SECOND_PIC
 ; Note: MACHINE_UNEMU_AT sets it
 ; %define AT_SHUTDOWN
+
+; The board has a second DMAC (8237, channels 4-7) at ports C0h-DFh: POST
+; initializes it as the IBM PC/AT BIOS does, with channel 4 (the cascade
+; from the first DMAC, channels 0-3) in cascade mode and unmasked, and
+; channels 5-7 masked. The port written for hardware detection
+; and I/O delays (unused_reg) moves from 0C0h, which is the second DMAC's
+; channel 4 address register there, to 8Eh, a DMA page register the AT does
+; not use (and not 80h, the POST code port)
+; Note: MACHINE_UNEMU_AT sets it
+; %define AT_DMA
