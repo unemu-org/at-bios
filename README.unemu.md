@@ -40,7 +40,7 @@ depend on the nasm version.
 |---|---|
 | `xi8088` | `1ad458acb1f22dee6b3d9b6bd95e83218a7ddc5389fa2b2c67a4001e689c81a8` |
 | `xi8088-atreset` | `61589573c9809273198b137d9419c87242b0a5f63c2ad834a9565950c3d6becc` |
-| `unemu-at` | `f8ecd4a2ad4906eb94a7595ede755019f545f40111725819eeb80e423adc8db6` |
+| `unemu-at` | `e8a39cce7d0d7b7bdbede565342f124e2cf3e0c4daafc98e702d7cafc56fe079` |
 
 ## Deviations from upstream
 
@@ -123,19 +123,22 @@ the same bytes as before (`xi8088` is pinned).
       the CPU once more through the 8042, with shutdown code 09h. It counts 64
       KiB blocks from 100000h: the target descriptor is moved to each block in
       turn, AA55h is written at offset 0 and 55AAh at FFFEh, both are read
-      back and the old words are put back. The first block where either word
-      does not read back ends the count, as does FE0000h, where the AT decodes
-      its ROM, as on the IBM AT (at most EEh blocks, 3B80h KiB); a size that
-      is not a multiple of 64 KiB is rounded down. Two different words, read
-      after both are written, fail on a bus that reads 00h or FFh or the last
-      value written; the 24-bit base does not wrap below 16 MiB. A parity or
-      I/O channel check error latched by the test is cleared. Memory keeps its
-      contents; below 1 MiB only the POST stack and 0040:0067h–0040:006Ah (the
+      back, and a block that keeps them is then cleared to zero, on every
+      POST, as the IBM POST does, so nothing from the previous boot survives
+      above 1 MiB (FreeDOS writes a VDISK header at 100000h, which would make
+      its XMS driver refuse to load after a warm restart). The first block
+      where either word does not read back ends the count, as does FE0000h,
+      where the AT decodes its ROM, as on the IBM AT (at most EEh blocks,
+      3B80h KiB); a size that is not a multiple of 64 KiB is rounded down. Two
+      different words, read after both are written, fail on a bus that reads
+      00h or FFh or the last value written; the 24-bit base does not wrap
+      below 16 MiB. A parity or I/O channel check error latched by the test is
+      cleared. Below 1 MiB only the POST stack and 0040:0067h–0040:006Ah (the
       frame pointer across the reset) change. An error (an exception in
       protected mode, an 8042 timeout) stores 0. A20 is disabled again on the
       way back, and the PICs keep the POST's setup (code 09h does not touch
-      them). 30h–31h are outside every checksum range. As the IBM POST
-      does, `AT_CMOS_CHECK` (below) then compares the measured size with the
+      them). 30h–31h are outside every checksum range. As the IBM POST does,
+      `AT_CMOS_CHECK` (below) then compares the measured size with the
       configured one, CMOS 17h–18h (164 on a mismatch);
     - the CPU reset: AH=87h and the POST sizing need the AT's CPU-only
       reset through the 8042 (FEh), which leaves the 8042 system flag,
@@ -146,7 +149,8 @@ the same bytes as before (`xi8088` is pinned).
       on. So that such a machine still boots, `ext_mem_size_init` writes
       FFh to CMOS 31h before it sizes (no size reaches it, 15 MiB is
       3Ch); a POST that finds FFh there skips the sizing and reports the
-      configured size, 17h–18h at most 3C00h, which also clears the mark.
+      configured size, 17h–18h at most 3C00h, which also clears the mark
+      (that POST does not clear the memory above 1 MiB).
       On such a machine each boot runs the POST twice (the sizing POST,
       cut off by the reset, then one with the configured size), and an
       AH=87h call reboots the machine instead of returning, as it also

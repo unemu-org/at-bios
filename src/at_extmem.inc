@@ -109,9 +109,9 @@ bm_size_mark	equ	0FFh	; CMOS 31h while the sizing runs (above 3Ch)
 ;	  result comes back in the frame: AL = blocks, AH = status. An error
 ;	  (an exception in protected mode, a keyboard controller timeout)
 ;	  gives size 0
-;	- Memory keeps its contents: the test words are put back. Below
-;	  1 MiB only the stack and 0040:0067h-0040:006Ah (the frame pointer
-;	  across the reset) change
+;	- The memory found above 1 MiB is cleared. Below 1 MiB only the
+;	  stack and 0040:0067h-0040:006Ah (the frame pointer across the
+;	  reset) change
 ;	- The sizing needs the AT's CPU-only reset through the keyboard
 ;	  controller. While it runs, CMOS 31h holds FFh, more than any size.
 ;	  Where the reset is a full system reset instead (the keyboard
@@ -360,8 +360,11 @@ bm_clear_checks:
 ;	  turn through the GDT data descriptor (08h). Its base is 24 bits, so
 ;	  the blocks do not wrap below 16 MiB
 ;	- Two different words, read back after both are written, fail on a
-;	  bus that reads 00h or FFh, or the last value written. The two words
-;	  are put back, so memory keeps its contents
+;	  bus that reads 00h or FFh, or the last value written
+;	- Each block found is cleared (zeroed), on every POST, as the IBM
+;	  PC/AT POST does: memory above 1 MiB keeps nothing from the previous
+;	  boot, such as the VDISK header at 100000h that DOS kernels and XMS
+;	  drivers use to tell whether extended memory is already taken
 ;	- A parity or I/O channel check error that reading an empty block
 ;	  latches is cleared and not reported
 
@@ -385,6 +388,10 @@ bm_size:
 	xor	cx,bm_size_pat1
 	or	ax,cx
 	jnz	.done			; no memory here
+	xor	ax,ax			; clear the block, as the IBM POST
+	xor	di,di			;   does, so nothing left in it by
+	mov	cx,8000h		;   the previous boot (such as a
+	rep	stosw			;   VDISK header at 1 MiB) survives
 	inc	dl			; next block
 	cmp	dl,bm_size_end
 	jb	.block			; up to FE0000h
