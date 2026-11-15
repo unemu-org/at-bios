@@ -60,7 +60,7 @@
 ; AT_EXT_MEMORY, AT_NMI_POLARITY and AT_CMOS_CHECK. See README.unemu.md for
 ; all differences
 %ifdef MACHINE_UNEMU_AT
-%define VERSION		'1.0.2-unemu.1'	; unemu AT BIOS version
+%define VERSION		'1.0.2-unemu.2'	; unemu AT BIOS version
 %define	START		8000h		; BIOS starts at offset 8000h
 %define MODEL_BYTE	0FCh		; IBM PC/AT
 %define AT_RTC				; Has AT-compatible RTC

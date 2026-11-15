@@ -40,7 +40,7 @@ depend on the nasm version.
 |---|---|
 | `xi8088` | `1ad458acb1f22dee6b3d9b6bd95e83218a7ddc5389fa2b2c67a4001e689c81a8` |
 | `xi8088-atreset` | `61589573c9809273198b137d9419c87242b0a5f63c2ad834a9565950c3d6becc` |
-| `unemu-at` | `fb74f2416feb2511045d9ddae6c4e97697bed785c899542efb3965dee2b607dc` |
+| `unemu-at` | `f8ecd4a2ad4906eb94a7595ede755019f545f40111725819eeb80e423adc8db6` |
 
 ## Deviations from upstream
 
@@ -336,7 +336,7 @@ the same bytes as before (`xi8088` is pinned).
       skips it then), and does not wait for an update cycle (the IBM POST
       waits up to about a second for one); there are no error beeps; F2
       at the prompt runs the BIOS setup;
-  - banner (`src/messages.inc`): "unemu AT BIOS, Version 1.0.2-unemu.1",
+  - banner (`src/messages.inc`): "unemu AT BIOS, Version 1.0.2-unemu.2",
     Sergey Kiselev's copyright line unchanged, and a line crediting the
     unemu contributors. `VERSION` is overridden for this configuration only;
     the ROM date stays upstream's.
