@@ -131,13 +131,14 @@ shutdown_jump:
 
 ;-------------------------------------------------------------------------
 ; shutdown code 09h - return from the INT 15h AH=87h block move
-; Note: a cold start until INT 15h AH=87h is implemented. The block move
-;	will save SS:SP at 0040:0067h (SP) and 0040:0069h (SS) before the
-;	reset, and this code will restore the stack from there and return
-;	to its caller
+; (block_move_return in at_extmem.inc), a cold start without AT_EXT_MEMORY
 
 shutdown_block_move:
+%ifdef AT_EXT_MEMORY
+	jmp	block_move_return	; restore SS:SP, return to the caller
+%else ; AT_EXT_MEMORY
 	jmp	cold_start_power_on
+%endif ; AT_EXT_MEMORY
 
 ;=========================================================================
 ; shutdown_cold - clear the CMOS shutdown byte, then cold start

@@ -40,7 +40,7 @@ depend on the nasm version.
 |---|---|
 | `xi8088` | `1ad458acb1f22dee6b3d9b6bd95e83218a7ddc5389fa2b2c67a4001e689c81a8` |
 | `xi8088-atreset` | `61589573c9809273198b137d9419c87242b0a5f63c2ad834a9565950c3d6becc` |
-| `unemu-at` | `2534ed978ba5f76aabda2579800ee9f418f00b983f9e9b3edbe6a52805872868` |
+| `unemu-at` | `d0f637d62bdbf8e8ea1d2f89aeb6646e57877aab7b0d304c0947b9613c6d6464` |
 
 ## Deviations from upstream
 
@@ -72,8 +72,8 @@ the same bytes as before (`xi8088` is pinned).
     - 05h: reads port 60h, sends EOI to the master 8259 and far-jumps
       through 0040:0067h (both masks read FFh);
     - 0Ah: far-jumps through 0040:0067h, the PIC masks left as they were;
-    - 09h (return from INT 15h AH=87h): a cold start until the block move
-      exists (`shutdown_block_move`);
+    - 09h (return from INT 15h AH=87h): `block_move_return` with
+      `AT_EXT_MEMORY` (below), a cold start without it;
     - 04h: POST, which then boots the OS through INT 19h. The IBM AT goes
       to INT 19h directly, but this BIOS's floppy code waits for IRQ6,
       which the masked PICs would never deliver;
@@ -103,6 +103,50 @@ the same bytes as before (`xi8088` is pinned).
     only through bit 2), then 00h enables both with the speaker off; the
     Xi 8088 writes only 08h before 00h, and its 00h also means turbo off;
   - `FLOPPY_RESET_ANY_DRIVE` and `AT_SHUTDOWN` are set (above);
+  - `AT_EXT_MEMORY` (`src/config.inc`; the code is in `src/at_extmem.inc`,
+    included from `src/bios.asm` and dispatched from `int_15` in
+    `src/misc.inc`; requires `AT_SHUTDOWN` and `AT_CPU`): the extended
+    memory services of the IBM PC/AT BIOS. Upstream returns AH=86h with CF
+    set for both. The code uses 80286 instructions and is assembled only in
+    this configuration.
+    - INT 15h AH=88h returns in AX the extended memory size in KiB from
+      CMOS 30h–31h. Later BIOSes clear CF; this one returns the caller's
+      flags unchanged, as the IBM AT does. NMI is masked while CMOS is
+      read, then port 70h is left at 0Dh (NMI enabled, AT polarity);
+    - interim size in CMOS 30h–31h: on every POST, right after `rtc_init`
+      (after the inherited checksum check, which clears 10h–20h on a
+      mismatch), `ext_mem_size_init` copies the configured extended memory
+      size, CMOS 17h–18h, to 30h–31h, at most 3C00h (15 MiB), with NMI
+      masked. 30h–31h are outside every checksum range. The IBM POST
+      stores the extended memory size it measured there; uab-ywf.5 will
+      measure it and keep the smaller of the configured and measured
+      sizes;
+    - INT 15h AH=87h moves CX words (up to 8000h) between the source and
+      target descriptors of the caller's 48-byte GDT at ES:SI. The BIOS
+      fills the GDT descriptor (08h, limit 2Fh), the code segment (20h,
+      base F0000h) and the stack segment (28h, base SS×16); it saves the
+      registers, DS and ES on the caller's stack and its SS:SP at
+      0040:0069h/0040:0067h, disables interrupts, enables A20 through
+      the 8042 (D1h, DFh), writes shutdown code 09h with NMI masked,
+      enters protected mode (an IDT in ROM sends every exception vector,
+      00h–1Fh, to a handler that records status 02h), moves the block,
+      checks port 61h for a parity or I/O channel check error (status
+      01h, latches cleared), and resets the CPU through the 8042 (FEh);
+      if the CPU still runs about 30 ms later, it forces a triple fault
+      (an interrupt with an empty IDT). The status is 02h from before
+      protected mode until the move is done, so a triple fault, which
+      also resumes through code 09h, returns an error.
+      `block_move_return` restores SS:SP, disables A20 (D1h, DDh; status
+      03h on a timeout unless an error is already recorded), writes 0Dh
+      to port 70h (NMI enabled), restores the registers with AH = status
+      and returns with RETF 2 and STI: CF = 0 and ZF = 1 for status 0,
+      CF = 1 and ZF = 0 otherwise, the caller's flags dropped, as the IBM
+      AT does. An A20 enable timeout returns status 03h the same way,
+      without the reset;
+    - the status is kept across the reset in the saved AH on the
+      caller's stack (the IBM AT keeps it in port 80h, which on the unemu
+      AT board is the POST code port and reads FFh). The frame is the
+      IBM one: the general registers, then ES, then DS;
   - `AT_DISPLAY_SWITCH` (`src/config.inc`, used in `src/at_kbc.inc`): the
     display type switch, bit 6 of the 8042 input port (command C0h), is read
     with the IBM PC/AT polarity: 0 (jumper installed) selects the colour
@@ -147,13 +191,15 @@ the same bytes as before (`xi8088` is pinned).
 
 The `MACHINE_UNEMU_AT` configuration targets an IBM PC/AT-compatible board
 (80286, two 8259s, two 8237s, 8042, MC146818). It has the CMOS shutdown-byte
-resume after a processor reset (`AT_SHUTDOWN`: codes 05h and 0Ah, and 04h
-through the POST). It still has to gain at least what AT software expects
-of the system BIOS:
+resume after a processor reset (`AT_SHUTDOWN`: codes 05h, 09h and 0Ah, and
+04h through the POST) and INT 15h AH=87h and AH=88h (`AT_EXT_MEMORY`). It
+still has to gain at least what AT software expects of the system BIOS:
 
-- INT 15h AH=87h (block move) with its return through shutdown code 09h
-  (dispatched, a cold start until then), and AH=88h (extended memory size);
-- A20 control through the 8042;
+- the measured extended memory size in CMOS 30h–31h, which INT 15h AH=88h
+  reports (the IBM POST writes the size it measured there; for now POST
+  copies the configured size from 17h–18h);
+- A20 left disabled after POST, as on the IBM AT (the 8042 self-test may
+  enable it; only the block move return disables it);
 - CMOS configuration checks, with the checksum over 10h–2Dh (the inherited
   NVRAM setup sums only 10h–20h and keeps its own configuration byte at 2Dh).
 

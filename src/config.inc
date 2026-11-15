@@ -56,8 +56,8 @@
 ; Settings for the unemu AT board (emulated IBM PC/AT-compatible 80286 board)
 ; Same as Xi 8088, except: no TURBO_MODE (on the AT, bit 2 of port 61h
 ; disables the RAM parity check, it is not a turbo switch), its own VERSION,
-; FLOPPY_RESET_ANY_DRIVE, AT_DISPLAY_SWITCH, AT_CPU, AT_SHUTDOWN and AT_DMA.
-; See README.unemu.md for all differences
+; FLOPPY_RESET_ANY_DRIVE, AT_DISPLAY_SWITCH, AT_CPU, AT_SHUTDOWN, AT_DMA and
+; AT_EXT_MEMORY. See README.unemu.md for all differences
 %ifdef MACHINE_UNEMU_AT
 %define VERSION		'1.0.2-unemu.1'	; unemu AT BIOS version
 %define	START		8000h		; BIOS starts at offset 8000h
@@ -80,6 +80,7 @@
 %define AT_CPU				; Has 80286 CPU and 80287 FPU socket
 %define AT_SHUTDOWN			; CMOS shutdown byte resume
 %define AT_DMA				; Has two DMACs (AT-style)
+%define AT_EXT_MEMORY			; INT 15h AH=87h, AH=88h
 %endif ; MACHINE_UNEMU_AT
 
 ; Settings for FE2010A
@@ -175,13 +176,14 @@
 ; After a soft reset (a CPU reset through the 8042 keyboard controller or
 ; a triple fault, told from a power on by the 8042 system flag), act on the
 ; CMOS shutdown status byte (0Fh) as the IBM PC/AT BIOS does: codes 05h and
-; 0Ah (far jump through 0040:0067h), 09h (block move return, a cold start
-; for now), others - POST. Code 04h runs the POST, which then boots the OS
-; (the IBM PC/AT BIOS goes to INT 19h directly). Power on and the IOCHK NMI
-; reboot clear the shutdown byte and cold start. The warm boot flag at
-; 0040:0072h is cleared at power on and at the end of POST, so 1234h skips
-; the memory test once. Uses the IBM PC/AT port 70h NMI polarity (bit 7 set
-; masks NMI). Requires AT_KEYBOARD, AT_RTC and SECOND_PIC
+; 0Ah (far jump through 0040:0067h), 09h (block move return with
+; AT_EXT_MEMORY, a cold start without it), others - POST. Code 04h runs
+; the POST, which then boots the OS (the IBM PC/AT BIOS goes to INT 19h
+; directly). Power on and the IOCHK NMI reboot clear the shutdown byte and
+; cold start. The warm boot flag at 0040:0072h is cleared at power on and
+; at the end of POST, so 1234h skips the memory test once. Uses the IBM
+; PC/AT port 70h NMI polarity (bit 7 set masks NMI). Requires AT_KEYBOARD,
+; AT_RTC and SECOND_PIC
 ; Note: MACHINE_UNEMU_AT sets it
 ; %define AT_SHUTDOWN
 
@@ -194,3 +196,16 @@
 ; not use (and not 80h, the POST code port)
 ; Note: MACHINE_UNEMU_AT sets it
 ; %define AT_DMA
+
+; INT 15h AH=87h (move block) and AH=88h (get extended memory size) as in
+; the IBM PC/AT BIOS. AH=88h returns CMOS 30h-31h in AX, flags unchanged.
+; AH=87h moves CX words between the source and target descriptors (24-bit
+; bases) of the caller's GDT at ES:SI in 80286 protected mode, with A20
+; enabled through the keyboard controller, then resets the CPU through the
+; keyboard controller with the CMOS shutdown code 09h, disables A20 and
+; returns with AH = status (CF = 1 and ZF = 0 on an error). Interim: POST
+; copies the configured extended memory size (CMOS 17h-18h, at most 15
+; MiB) to 30h-31h; the IBM PC/AT POST stores the size it measured there.
+; Uses 80286 instructions. Requires AT_SHUTDOWN and AT_CPU
+; Note: MACHINE_UNEMU_AT sets it
+; %define AT_EXT_MEMORY

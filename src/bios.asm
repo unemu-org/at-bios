@@ -710,6 +710,9 @@ init_v40:
 %ifdef AT_SHUTDOWN
 %include	"at_shutdown.inc"	; CMOS shutdown byte dispatch
 %endif ; AT_SHUTDOWN
+%ifdef AT_EXT_MEMORY
+%include	"at_extmem.inc"		; INT 15h AH=87h, AH=88h
+%endif ; AT_EXT_MEMORY
 
 %ifdef AT_DMA
 %include	"at_dma.inc"		; second DMAC initialization
@@ -1202,6 +1205,9 @@ low_ram_ok:
 ; Initialize RTC / NVRAM
 ; Read equipment byte from CMOS and set it in BIOS data area
 	call	rtc_init
+%ifdef AT_EXT_MEMORY
+	call	ext_mem_size_init	; CMOS 30h-31h for INT 15h AH=88h
+%endif ; AT_EXT_MEMORY
 
 %endif ; AT_RTC
 

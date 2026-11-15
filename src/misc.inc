@@ -2,6 +2,8 @@
 ; misc.inc - Miscellaneous BIOS Services
 ;       INT 15h, functions:
 ;       	4Fh	- OS hook keyboard intercept
+;		87h	- Move block (see at_extmem.inc)
+;		88h	- Get extended memory size (see at_extmem.inc)
 ;		90h	- Device busy loop
 ;		91h	- Interrupt completed
 ;		0C0h	- Get system configruation
@@ -41,6 +43,10 @@ int_15_flags	equ	int_15_cs+2
 ; Input:
 ;	AH = 4Fh - OS hook keyboard intercept
 ;		- Does nothing
+;	AH = 87h - Move block
+;		- Implemented in at_extmem.inc
+;	AH = 88h - Get extended memory size
+;		- Implemented in at_extmem.inc
 ;	AH = 0C2h - PS/2 mouse services
 ;		- Implemented in ps2aux.inc
 ;-------------------------------------------------------------------------
@@ -64,6 +70,17 @@ int_15:
 	jmp	int_15_fnC2		; jump to PS/2 mouse handler
 .1:
 %endif
+
+%ifdef AT_EXT_MEMORY
+	cmp	ah,87h
+	jne	.2
+	jmp	int_15_fn87		; move block (at_extmem.inc)
+.2:
+	cmp	ah,88h
+	jne	.3
+	jmp	int_15_fn88		; extended memory size (at_extmem.inc)
+.3:
+%endif ; AT_EXT_MEMORY
 
 	mov	ah,86h			; no cassete present
 
