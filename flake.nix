@@ -14,7 +14,8 @@
       # One build variant: the raw 32 KiB image that maps at F000:8000 (physical
       # F8000h-FFFFFh), assembled from src/bios.asm with the given defines. The
       # 128 KiB flash-programmer images of the upstream Makefile are not built.
-      # `patches` are applied to a copy of the source before assembly.
+      # `patches` (none at present) are applied to a copy of the source before
+      # assembly.
       romFor = system: { name, defines, patches ? [ ], sha256 ? null }:
         let pkgs = pkgsFor system; in
         pkgs.stdenv.mkDerivation {
@@ -61,19 +62,25 @@
           defines = [ "MACHINE_XI8088" ];
           sha256 = "1ad458acb1f22dee6b3d9b6bd95e83218a7ddc5389fa2b2c67a4001e689c81a8";
         };
-        # The image unemupc98's open AT profile boots today: Xi 8088 plus the
-        # diskette-reset fix kept as patches/at-reset.patch. The first fork bead
-        # turns this into a MACHINE_UNEMU_AT configuration in the source.
+        # The image unemupc98's open AT profile booted before unemu-at: Xi 8088
+        # plus the diskette-reset fix (FLOPPY_RESET_ANY_DRIVE, formerly
+        # patches/at-reset.patch). Same bytes as the former patched build.
         xi8088-atreset = romFor system {
           name = "xi8088-atreset";
-          defines = [ "MACHINE_XI8088" ];
-          patches = [ ./patches/at-reset.patch ];
+          defines = [ "MACHINE_XI8088" "FLOPPY_RESET_ANY_DRIVE" ];
           sha256 = "61589573c9809273198b137d9419c87242b0a5f63c2ad834a9565950c3d6becc";
+        };
+        # The open AT BIOS of the unemu machines: the MACHINE_UNEMU_AT
+        # configuration (see README.unemu.md for its differences from Xi 8088).
+        unemu-at = romFor system {
+          name = "unemu-at";
+          defines = [ "MACHINE_UNEMU_AT" ];
+          sha256 = "c3899dc14cb3ea9cde0bd7e0a8823efdeab4586679be152cc07011c1a83c3194";
         };
       };
     in
     {
-      packages = forAll (system: (variants system) // { default = (variants system).xi8088-atreset; });
+      packages = forAll (system: (variants system) // { default = (variants system).unemu-at; });
 
       # `nix flake check` rebuilds every pinned variant and fails on any byte change.
       checks = forAll (system: variants system);

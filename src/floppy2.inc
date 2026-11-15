@@ -89,6 +89,14 @@ int_13:
 	mov	bx,biosdseg
 	mov	ds,bx
 
+%ifdef FLOPPY_RESET_ANY_DRIVE
+; IBM PC AT Technical Reference, BIOS listing, DSKETTE (OK_FUNC/OK_DRV):
+; reset and status accept any DL, including fixed-disk reset requests.
+; Status already bypasses drive validation below.
+	cmp	ah,00h
+	je	int_13_fn00		; Reset disk system regardless of DL
+%endif ; FLOPPY_RESET_ANY_DRIVE
+
 ; fn01 doesn't need drive type
 
 	cmp	ah,01h

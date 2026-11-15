@@ -20,8 +20,12 @@ images never depend on a proprietary system BIOS.
 ## Build
 
 ```sh
+nix build                    # same as .#unemu-at
+nix build .#unemu-at         # result/bios-unemu-at.bin: the MACHINE_UNEMU_AT config
 nix build .#xi8088           # result/bios-xi8088.bin: upstream Xi 8088 config, unchanged
-nix build .#xi8088-atreset   # the image unemupc98's open AT profile boots today
+nix build .#xi8088-atreset   # Xi 8088 plus FLOPPY_RESET_ANY_DRIVE: the image
+                             # unemupc98's open AT profile boots until it moves
+                             # to unemu-at
 nix flake check              # rebuilds every variant and checks its pinned SHA-256
 nix develop                  # nasm, patch, make, cmake
 ```
@@ -36,18 +40,42 @@ depend on the nasm version.
 |---|---|
 | `xi8088` | `1ad458acb1f22dee6b3d9b6bd95e83218a7ddc5389fa2b2c67a4001e689c81a8` |
 | `xi8088-atreset` | `61589573c9809273198b137d9419c87242b0a5f63c2ad834a9565950c3d6becc` |
+| `unemu-at` | `c3899dc14cb3ea9cde0bd7e0a8823efdeab4586679be152cc07011c1a83c3194` |
 
 ## Deviations from upstream
 
-- `patches/at-reset.patch`, applied only by the `xi8088-atreset` variant:
+All of them are behind unemu defines; upstream's configurations assemble to
+the same bytes as before (`xi8088` is pinned).
+
+- `FLOPPY_RESET_ANY_DRIVE` (`src/config.inc`, used in `src/floppy2.inc`):
   INT 13h AH=00h (reset) accepts any DL, including fixed-disk reset requests,
-  as the IBM PC AT BIOS does. It is the first change to move into the source
-  behind an unemu AT configuration.
+  as the IBM PC AT BIOS does. Upstream rejects a reset for a drive number
+  above 1 or for a drive that is not configured. The `xi8088-atreset` variant
+  is Xi 8088 plus this define; it gives the same bytes as the former
+  `patches/at-reset.patch` build.
+- `MACHINE_UNEMU_AT` (`src/config.inc`): the configuration of the unemu AT
+  board, an emulated IBM PC/AT-compatible 80286 board. It starts from
+  `MACHINE_XI8088` and keeps its settings (model byte FCh, AT RTC and CMOS
+  setup, NMI mask through port 70h with the Xi 8088 polarity, two 8259s, 8042
+  keyboard controller, PS/2 aux port with a 1 KiB EBDA, port 61h refresh-bit
+  delays). The differences:
+  - no `TURBO_MODE`: the Xi 8088 turbo switch is bit 2 of port 61h, which on
+    the AT disables the RAM parity check. The turbo setup option, the CPU
+    clock line and the Ctrl+Alt+Gray-/+ hot keys are left out;
+  - POST port 61h initialisation (`src/bios.asm`): 0Ch clears and disables
+    both ~IOCHK and the RAM parity check (on the AT the parity latch clears
+    only through bit 2), then 00h enables both with the speaker off; the
+    Xi 8088 writes only 08h before 00h, and its 00h also means turbo off;
+  - `FLOPPY_RESET_ANY_DRIVE` is set (above);
+  - banner (`src/messages.inc`): "unemu AT BIOS, Version 1.0.2-unemu.1",
+    Sergey Kiselev's copyright line unchanged, and a line crediting the
+    unemu contributors. `VERSION` is overridden for this configuration only;
+    the ROM date stays upstream's.
 
 ## Plan
 
-The goal is a `MACHINE_UNEMU_AT` configuration for an IBM PC/AT-compatible
-board (80286, two 8259s, two 8237s, 8042, MC146818). It must at least provide
+The `MACHINE_UNEMU_AT` configuration targets an IBM PC/AT-compatible board
+(80286, two 8259s, two 8237s, 8042, MC146818). It still has to gain at least
 what AT software expects of the system BIOS:
 
 - the CMOS shutdown-byte resume after a processor reset (codes 05h, 09h and
@@ -55,7 +83,18 @@ what AT software expects of the system BIOS:
 - INT 15h AH=87h (block move) and AH=88h (extended memory size);
 - A20 control through the 8042;
 - the AT display switch read with IBM polarity;
-- CMOS configuration checks.
+- CMOS configuration checks, with the checksum over 10h–2Dh (the inherited
+  NVRAM setup sums only 10h–20h and keeps its own configuration byte at 2Dh).
+
+Inherited behaviour that is not yet AT-correct:
+
+- the NMI mask polarity of port 70h is the reverse of the IBM AT's (bit 7
+  set masks NMI on the AT);
+- CPU detection knows only the 8088, 80C88 and V20, so an 80286 is reported
+  as an 8088;
+- only the first 8237 is initialised (the second, with channel 4 in cascade
+  mode, is not), and port C0h, the second 8237's channel 4 address register,
+  is used as a scratch I/O-delay port.
 
 The work is tracked in this repository's beads (prefix `uab`). unemupc98 fetches
 released images by SHA-256 and lists them in its firmware catalogue as open

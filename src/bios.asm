@@ -811,6 +811,13 @@ cpu_ok:
 	out	ppi_pb_reg,al		; and also turn off the speaker
 %endif ; MACHINE_XI8088
 
+%ifdef MACHINE_UNEMU_AT
+	mov	al,0Ch			; clear and disable ~IOCHK and parity check
+	out	ppi_pb_reg,al
+	mov	al,00h			; enable ~IOCHK and RAM parity check
+	out	ppi_pb_reg,al		; and also turn off the speaker
+%endif ; MACHINE_UNEMU_AT
+
 %ifdef MACHINE_FE2010A
 	mov	al,fe_par_disable	; Disable parity checking
 	out	fe_config_reg,al	; FE2010A chipset configuration register

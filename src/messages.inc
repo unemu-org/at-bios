@@ -38,10 +38,16 @@ msg_copyright	db	0Dh, 0Ah
 %ifdef MACHINE_HOMEBREW8088
 		db	"Homebrew8088"
 %endif ; MACHINE_HOMEBREW8088
+%ifdef MACHINE_UNEMU_AT
+		db	"unemu AT"
+%endif ; MACHINE_UNEMU_AT
 		db	" BIOS, Version "
 		db	VERSION
 		db	". "
 		db	"Copyright (C) 2010 - 2026 Sergey Kiselev", 0Dh, 0Ah
+%ifdef MACHINE_UNEMU_AT
+		db	"Adapted for unemu by the unemu contributors", 0Dh, 0Ah
+%endif ; MACHINE_UNEMU_AT
 		db	"Distributed under the terms of "
 		db	"the GNU General Public License", 0Dh, 0Ah
 msg_crlf	db      0Dh, 0Ah, 00h

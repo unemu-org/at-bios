@@ -32,6 +32,7 @@
 ;%define MACHINE_HOMEBREW8088		; EMM Computers "Homebrew8088" board
 ;%define MACHINE_XT			; IBM PC/XT or highly compatible board
 					; FIXME: not implemented yet
+;%define MACHINE_UNEMU_AT		; unemu AT (emulated IBM PC/AT board)
 
 ; Settings for Xi 8088
 %ifdef MACHINE_XI8088
@@ -51,6 +52,30 @@
 %define EBDA_SIZE	1		; 1KB reserved for EBDA
 					; EBDA is required for PS/2 aux support
 %endif ; MACHINE_XI8088
+
+; Settings for the unemu AT board (emulated IBM PC/AT-compatible 80286 board)
+; Same as Xi 8088, except: no TURBO_MODE (on the AT, bit 2 of port 61h
+; disables the RAM parity check, it is not a turbo switch), its own VERSION
+; and FLOPPY_RESET_ANY_DRIVE. See README.unemu.md for all differences
+%ifdef MACHINE_UNEMU_AT
+%define VERSION		'1.0.2-unemu.1'	; unemu AT BIOS version
+%define	START		8000h		; BIOS starts at offset 8000h
+%define MODEL_BYTE	0FCh		; IBM PC/AT
+%define AT_RTC				; Has AT-compatible RTC
+%define AT_RTC_NVRAM			; Use AT RTC for BIOS configuration
+%define AT_NMI				; Use port 70h for NMI enable/disable
+%define AT_DELAY			; Use refresh bit of port 61h for delays
+%define SECOND_PIC			; Has two PICs (AT-style)
+%define AT_KEYBOARD			; Has AT-compatible keyboard controller
+%define PS2_MOUSE			; Enable PS/2 auxiliary device support
+%define DISABLE_KBD_DURING_INTERRUPTS	; Don't disable keyboard in INT1
+%define MIN_RAM_SIZE	32		; At least 32 KiB to boot the system
+%define MAX_RAM_SIZE	640		; Scan this much memory during POST
+%define RAM_TEST_BLOCK	16384		; block size for RAM test
+%define EBDA_SIZE	1		; 1KB reserved for EBDA
+					; EBDA is required for PS/2 aux support
+%define FLOPPY_RESET_ANY_DRIVE		; INT 13h AH=00h accepts any drive
+%endif ; MACHINE_UNEMU_AT
 
 ; Settings for FE2010A
 %ifdef MACHINE_FE2010A
@@ -122,3 +147,8 @@
 ; Check for the boot sector signature
 ; Note: Most BIOSes do not check for it
 ; %define BOOT_SIGNATURE
+
+; INT 13h AH=00h (reset disk system) accepts any drive number in DL,
+; including fixed disk reset requests, as the IBM PC/AT BIOS does
+; Note: MACHINE_UNEMU_AT sets it
+; %define FLOPPY_RESET_ANY_DRIVE
