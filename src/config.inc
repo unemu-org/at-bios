@@ -56,8 +56,8 @@
 ; Settings for the unemu AT board (emulated IBM PC/AT-compatible 80286 board)
 ; Same as Xi 8088, except: no TURBO_MODE (on the AT, bit 2 of port 61h
 ; disables the RAM parity check, it is not a turbo switch), its own VERSION,
-; FLOPPY_RESET_ANY_DRIVE, AT_DISPLAY_SWITCH, AT_CPU, AT_SHUTDOWN, AT_DMA and
-; AT_EXT_MEMORY. See README.unemu.md for all differences
+; FLOPPY_RESET_ANY_DRIVE, AT_DISPLAY_SWITCH, AT_CPU, AT_SHUTDOWN, AT_DMA,
+; AT_EXT_MEMORY and AT_NMI_POLARITY. See README.unemu.md for all differences
 %ifdef MACHINE_UNEMU_AT
 %define VERSION		'1.0.2-unemu.1'	; unemu AT BIOS version
 %define	START		8000h		; BIOS starts at offset 8000h
@@ -81,6 +81,7 @@
 %define AT_SHUTDOWN			; CMOS shutdown byte resume
 %define AT_DMA				; Has two DMACs (AT-style)
 %define AT_EXT_MEMORY			; INT 15h AH=87h, AH=88h
+%define AT_NMI_POLARITY			; IBM PC/AT port 70h NMI mask polarity
 %endif ; MACHINE_UNEMU_AT
 
 ; Settings for FE2010A
@@ -211,3 +212,17 @@
 ; and AT_CPU
 ; Note: MACHINE_UNEMU_AT sets it
 ; %define AT_EXT_MEMORY
+
+; Port 70h bit 7 (NMI mask) has the IBM PC/AT polarity: 1 masks NMI, 0
+; enables it. The Xi 8088 uses the reverse: 0 disables NMI, 1 enables it.
+; POST masks NMI at the start and enables it after initializing the PICs and
+; the keyboard controller. The NMI handler masks NMI and enables it again on
+; exit, as the IBM PC/AT BIOS does after an NMI that is not an I/O check;
+; after an I/O check, key 'd' leaves it masked until the next rtc_read or
+; rtc_write with bit 7 clear (INT 1Ah, IRQ8). rtc_read and rtc_write mask
+; NMI during the access, then select register 0Dh with bit 7 of the address
+; as the NMI mask, as the IBM PC/AT CMOS_READ does (0 = enable NMI).
+; AT_SHUTDOWN and AT_EXT_MEMORY write port 70h with this polarity directly.
+; Requires AT_NMI and the RTC at port 70h (no AT_RTC_PORT)
+; Note: MACHINE_UNEMU_AT sets it
+; %define AT_NMI_POLARITY

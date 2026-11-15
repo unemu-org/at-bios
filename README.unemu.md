@@ -40,7 +40,7 @@ depend on the nasm version.
 |---|---|
 | `xi8088` | `1ad458acb1f22dee6b3d9b6bd95e83218a7ddc5389fa2b2c67a4001e689c81a8` |
 | `xi8088-atreset` | `61589573c9809273198b137d9419c87242b0a5f63c2ad834a9565950c3d6becc` |
-| `unemu-at` | `36085ec4db0016e01cfd653f591dc42157bbd5383f2134ed80f1dbda0011d7a5` |
+| `unemu-at` | `f584466b60a996fdad17d5de3c8168e91a172f27b7045146ec9d4fc4abe0ed2c` |
 
 ## Deviations from upstream
 
@@ -92,9 +92,9 @@ the same bytes as before (`xi8088` is pinned).
 - `MACHINE_UNEMU_AT` (`src/config.inc`): the configuration of the unemu AT
   board, an emulated IBM PC/AT-compatible 80286 board. It starts from
   `MACHINE_XI8088` and keeps its settings (model byte FCh, AT RTC and CMOS
-  setup, NMI mask through port 70h with the Xi 8088 polarity, two 8259s, 8042
-  keyboard controller, PS/2 aux port with a 1 KiB EBDA, port 61h refresh-bit
-  delays). The differences:
+  setup, NMI mask through port 70h, two 8259s, 8042 keyboard controller,
+  PS/2 aux port with a 1 KiB EBDA, port 61h refresh-bit delays). The
+  differences:
   - no `TURBO_MODE`: the Xi 8088 turbo switch is bit 2 of port 61h, which on
     the AT disables the RAM parity check. The turbo setup option, the CPU
     clock line and the Ctrl+Alt+Gray-/+ hot keys are left out;
@@ -196,6 +196,35 @@ the same bytes as before (`xi8088` is pinned).
     flip-flop) to 8Eh, a DMA page register the AT does not use. Port 80h
     is not used for it, so the POST codes there stay those of the POST
     stages;
+  - `AT_NMI_POLARITY` (`src/config.inc`, used in `src/bios.asm` and
+    `src/rtc.inc`): port 70h bit 7 is the NMI mask with the IBM PC/AT
+    polarity, set masks NMI. The inherited code is written for the Xi
+    8088, where bit 7 set enables NMI (upstream ORs 80h into the register
+    number to enable NMI and clears bit 7 to disable it). On the AT board
+    it would leave NMI enabled during early POST, mask it with the POST
+    "enable" and enable it again with every CMOS access. The NMI writes
+    stay where upstream has them; each upstream line is kept for the
+    other configurations, with the AT variant next to it, using the
+    `nmi_disable_bit` and `nmi_enable_bit` equates:
+    - POST masks NMI at `cpu_ok` (8Dh to port 70h) and enables it (0Dh)
+      after the PIC and 8042 initialization, before the video and RTC
+      initialization and the memory test, where upstream enables it (the
+      IBM PC/AT POST enables it just before INT 19h);
+    - the NMI handler (`int_02`) masks NMI on entry (8Dh). An NMI
+      without the I/O channel check bit, such as the 80287 error that
+      INT 75h passes on, returns with NMI enabled again (0Dh, through
+      `rtc_read`), as the IBM PC/AT handler does; upstream returns with
+      NMI disabled. After an I/O channel check, key 'i' enables NMI the
+      same way, and 'd' leaves it masked until the next `rtc_read` or
+      `rtc_write` with bit 7 clear (INT 1Ah, IRQ8) enables it;
+    - `rtc_read` and `rtc_write` mask NMI during the access (the address
+      ORed with 80h), then select register 0Dh with bit 7 of the caller's
+      address as the NMI mask, as IBM's CMOS routines do: clear enables
+      NMI, set leaves it masked. Every inherited caller passes bit 7
+      clear and runs after the POST enable, so NMI is enabled after each
+      CMOS access; the `AT_EXT_MEMORY` code passes it set and enables NMI
+      when it is done. `AT_SHUTDOWN` and `AT_EXT_MEMORY` write port 70h
+      directly with the same polarity;
   - banner (`src/messages.inc`): "unemu AT BIOS, Version 1.0.2-unemu.1",
     Sergey Kiselev's copyright line unchanged, and a line crediting the
     unemu contributors. `VERSION` is overridden for this configuration only;
@@ -215,11 +244,6 @@ software expects of the system BIOS:
   copies the configured size from 17h–18h);
 - CMOS configuration checks, with the checksum over 10h–2Dh (the inherited
   NVRAM setup sums only 10h–20h and keeps its own configuration byte at 2Dh).
-
-Inherited behaviour that is not yet AT-correct:
-
-- the NMI mask polarity of port 70h is the reverse of the IBM AT's (bit 7
-  set masks NMI on the AT); only the `AT_SHUTDOWN` code uses the AT's.
 
 The work is tracked in this repository's beads (prefix `uab`). unemupc98 fetches
 released images by SHA-256 and lists them in its firmware catalogue as open

@@ -72,9 +72,18 @@ cmos_vrt	equ	80h	; RTC vrt bit (1 = battery is OK)
 ;		bit 7    - 0 = disable NMI, 1 = enable NMI
 ; Output:
 ;	AL = byte from RTC
+; Note:
+;	With AT_NMI_POLARITY, NMI is masked during the access, and bit 7 of
+;	the address is the IBM PC/AT NMI mask on exit: 0 = enable NMI,
+;	1 = leave NMI masked (see rtc_nmi_exit). Flags are changed
 ;-------------------------------------------------------------------------
 rtc_read:
 	cli
+%ifdef AT_NMI_POLARITY
+	push	bx
+	mov	bl,al			; BL bit 7 = NMI mask on exit
+	or	al,nmi_disable_bit	; mask NMI during the access
+%endif ; AT_NMI_POLARITY
 %ifndef AT_RTC_PORT
 	out	rtc_addr_reg,al
 	jmp	$+2
@@ -94,6 +103,10 @@ rtc_read:
 	in	al,dx
 	pop	dx
 %endif ; AT_RTC_PORT
+%ifdef AT_NMI_POLARITY
+	call	rtc_nmi_exit		; select register 0Dh, set the NMI mask
+	pop	bx
+%endif ; AT_NMI_POLARITY
 	sti
 	ret
 
@@ -104,9 +117,18 @@ rtc_read:
 ;		bits 6-0 - address of byte to read
 ;		bit 7    - 0 = disable NMI, 1 = enable NMI
 ;	AH = byte to write to RTC
+; Note:
+;	With AT_NMI_POLARITY, NMI is masked during the access, and bit 7 of
+;	the address is the IBM PC/AT NMI mask on exit: 0 = enable NMI,
+;	1 = leave NMI masked (see rtc_nmi_exit). Flags are changed
 ;-------------------------------------------------------------------------
 rtc_write:
 	cli
+%ifdef AT_NMI_POLARITY
+	push	bx
+	mov	bl,al			; BL bit 7 = NMI mask on exit
+	or	al,nmi_disable_bit	; mask NMI during the access
+%endif ; AT_NMI_POLARITY
 %ifndef AT_RTC_PORT
 	out	rtc_addr_reg,al
 	jmp	$+2
@@ -129,8 +151,33 @@ rtc_write:
 	pop	dx
 %endif ; AT_RTC_PORT
 	xchg	ah,al
+%ifdef AT_NMI_POLARITY
+	call	rtc_nmi_exit		; select register 0Dh, set the NMI mask
+	mov	al,bl			; restore the address
+	pop	bx
+%endif ; AT_NMI_POLARITY
 	sti
 	ret
+
+%ifdef AT_NMI_POLARITY
+;=========================================================================
+; rtc_nmi_exit - Select RTC register 0Dh and set the NMI mask on exit from
+;	rtc_read and rtc_write, as the IBM PC/AT BIOS does
+; Input:
+;	BL bit 7 - 0 = enable NMI, 1 = leave NMI masked (IBM PC/AT polarity)
+; Output:
+;	none, registers preserved, flags changed (no caller of rtc_read or
+;	rtc_write tests the flags after the call)
+;-------------------------------------------------------------------------
+rtc_nmi_exit:
+	push	ax
+	mov	al,bl
+	and	al,nmi_disable_bit	; keep the NMI mask bit
+	or	al,cmos_control_d	; select read-only register 0Dh
+	out	rtc_addr_reg,al
+	pop	ax
+	ret
+%endif ; AT_NMI_POLARITY
 
 ;=========================================================================
 ; set_system_timer - set timer variables to RTC time

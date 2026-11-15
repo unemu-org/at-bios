@@ -168,6 +168,18 @@ nmi_disable	equ	00h	; disable NMI
 nmi_disa_mask	equ	7Fh	; disable NMI AND mask (bit 7 = 0)
 nmi_enable	equ	80h	; enable NMI OR mask (bit 7 = 1)
 
+%ifdef AT_NMI_POLARITY
+%ifndef AT_NMI
+%error "AT_NMI_POLARITY depends on AT_NMI. Please fix config.inc."
+%endif ; AT_NMI
+%ifdef AT_RTC_PORT
+%error "AT_NMI_POLARITY needs the RTC at port 70h (no AT_RTC_PORT). Please fix config.inc."
+%endif ; AT_RTC_PORT
+; NMI mask in the RTC address register (written to 70h), IBM PC/AT polarity
+nmi_disable_bit	equ	80h	; disable NMI OR mask (bit 7 = 1)
+nmi_enable_bit	equ	00h	; enable NMI OR mask (bit 7 = 0)
+%endif ; AT_NMI_POLARITY
+
 pic_freq	equ	1193182	; PIC input frequency - 14318180 MHz / 12
 
 ;========================================================================
@@ -820,7 +832,11 @@ cpu_ok:
 	out	post_reg,al
 
 %ifdef AT_NMI
+%ifdef AT_NMI_POLARITY
+	mov	al,0Dh | nmi_disable_bit
+%else ; AT_NMI_POLARITY
 	mov	al,0Dh & nmi_disa_mask
+%endif ; AT_NMI_POLARITY
 	out	nmi_mask_reg,al		; disable NMI
 	jmp	$+2
 	in	al,(nmi_mask_reg+1)	; dummy read to keep RTC happy
@@ -1125,7 +1141,11 @@ low_ram_ok:
 	sti
 
 %ifdef AT_NMI
+%ifdef AT_NMI_POLARITY
+	mov	al,0Dh | nmi_enable_bit
+%else ; AT_NMI_POLARITY
 	mov	al,0Dh | nmi_enable
+%endif ; AT_NMI_POLARITY
 	out	nmi_mask_reg,al		; enable NMI
 	jmp	$+2
 	in	al,(nmi_mask_reg+1)	; dummy read to keep RTC happy
@@ -1283,7 +1303,11 @@ low_ram_ok:
 int_02:
 	push	ax
 %ifdef AT_NMI
+%ifdef AT_NMI_POLARITY
+	mov	al,0Dh | nmi_disable_bit
+%else ; AT_NMI_POLARITY
 	mov	al,0Dh & nmi_disa_mask
+%endif ; AT_NMI_POLARITY
 	out	nmi_mask_reg,al		; disable NMI
 	jmp	$+2
 	in	al,rtc_data_reg		; read the RTC to keep it happy
@@ -1299,7 +1323,11 @@ int_02:
 	jnz	.iochk_nmi
 	mov	al,ah
 	out	ppi_pb_reg,al		; restore original bits
+%ifdef AT_NMI_POLARITY
+	jmp	.ignore			; not an I/O check - enable NMI and exit
+%else ; AT_NMI_POLARITY
 	jmp	.exit
+%endif ; AT_NMI_POLARITY
 
 .iochk_nmi:
 	push	si
@@ -1323,7 +1351,11 @@ int_02:
 	jmp	.1
 .ignore:
 %ifdef AT_NMI
+%ifdef AT_NMI_POLARITY
+	mov	al,0Dh | nmi_enable_bit
+%else ; AT_NMI_POLARITY
 	mov	al,0Dh | nmi_enable
+%endif ; AT_NMI_POLARITY
 	call	rtc_read		; enable NMI
 %else
 	mov	al,nmi_enable
