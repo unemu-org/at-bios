@@ -42,6 +42,27 @@ depend on the nasm version.
 | `xi8088-atreset` | `61589573c9809273198b137d9419c87242b0a5f63c2ad834a9565950c3d6becc` |
 | `unemu-at` | `6938dc8b665fa120f33775163ab6bacc559389525db87adedf734416f9ef2442` |
 
+## Releases
+
+A release is a signed, annotated `v1.0.2-unemu.N` tag whose message states
+the source revision and the SHA-256 of every variant. Its GitHub release
+carries three assets, built by `release/assets.sh` inside `nix develop`:
+
+- `bios-unemu-at.bin`, the `unemu-at` flake output;
+- `unemu-at-bios-<version>-src.tar`, its corresponding source: the tree at
+  the tag without upstream's prebuilt images (`binaries/`, `xtide_r625/`),
+  plus a `NOTICE` made from `release/source-notice.txt.in`, as a
+  deterministic GNU tar archive (ustar, members sorted by name, the commit
+  time as every timestamp, owner and group 0, fixed modes); the archived
+  tree must build the same ROM;
+- `SHA256SUMS` of both.
+
+The recipe matches the one unemupc's firmware fetch script uses, so both
+produce the same bytes. The workflow `.github/workflows/release-assets.yml`
+uploads the assets when a release is published, or by hand (workflow
+dispatch from `main`, with the tag and optionally the expected source
+archive SHA-256) for an existing release.
+
 ## Deviations from upstream
 
 All of them are behind unemu defines; upstream's configurations assemble to
